@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patchesStrategicMerge:
+  - patches/replicas-dev.yaml
+
+images:
+  - name: sample-app
+    newName: ghcr.io/dzacharis/repo0/sample-app
+    newTag: dev-latest

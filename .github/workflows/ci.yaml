@@ -51,6 +51,38 @@ jobs:
           helm lint bitnami/keycloak -f k8s/keycloak/helm-values.yaml 2>/dev/null || true
           helm lint jetstack/cert-manager -f k8s/cert-manager/helm-values.yaml 2>/dev/null || true
 
+  policy-check:
+    name: OPA Policy Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install conftest
+        run: |
+          curl -sL https://github.com/open-policy-agent/conftest/releases/download/v0.50.0/conftest_0.50.0_Linux_x86_64.tar.gz | tar xz
+          sudo mv conftest /usr/local/bin
+
+      - name: Run OPA policies against manifests
+        run: |
+          find k8s/apps/ -name "*.yaml" | xargs conftest test --policy policies/ --all-namespaces || true
+
+  validate-kustomize:
+    name: Validate Kustomize Overlays
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubeconform
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz
+          sudo mv kubeconform /usr/local/bin
+
+      - name: Validate dev overlay
+        run: kubectl kustomize k8s/kustomize/overlays/dev | kubeconform --ignore-missing-schemas --strict -
+
+      - name: Validate prod overlay
+        run: kubectl kustomize k8s/kustomize/overlays/prod | kubeconform --ignore-missing-schemas --strict -
+
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest

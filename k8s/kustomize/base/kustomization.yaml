@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../namespaces/namespaces.yaml
+  - ../../kong/plugins/jwt-auth.yaml
+  - ../../kong/plugins/rate-limiting.yaml
+  - ../../kong/plugins/cors.yaml
+  - ../../kong/plugins/oidc-keycloak.yaml
+  - ../../keycloak/realm-config.yaml
+  - ../../dapr/dapr-configuration.yaml
+  - ../../dapr/components/statestore.yaml
+  - ../../dapr/components/pubsub.yaml
+  - ../../dapr/components/secretstore.yaml
+  - ../../dapr/components/resiliency.yaml
+  - ../../cert-manager/cluster-issuer.yaml
+  - ../../apps/sample-app/service.yaml
+  - ../../apps/sample-app/deployment.yaml
+  - ../../apps/sample-app/ingress.yaml
+  - ../../apps/sample-app/hpa.yaml
+
+commonLabels:
+  app.kubernetes.io/managed-by: gitops
+  platform: internal
