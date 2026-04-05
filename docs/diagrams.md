@@ -450,3 +450,47 @@ flowchart LR
     PI & SI & AI --> OSNode
     OSNode --> OSDash
 ```
+
+---
+
+## 9. Maltego Transform Hub — Auth & Execution Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Op as Maltego Operator
+    participant KC as Keycloak<br/>(maltego-hub realm)
+    participant Hub as Transform Hub<br/>(FastAPI)
+    participant T as Transform Logic<br/>(dnspython / RDAP / ip-api)
+
+    rect rgb(240,248,255)
+        Note over Op,Hub: One-time registration (admin scope required)
+        Op->>Hub: POST /api/v1/clients/register<br/>Authorization: Bearer &lt;admin-token&gt;<br/>{"client_name": "alice-laptop"}
+        Hub->>KC: POST /admin/realms/maltego-hub/clients<br/>(Keycloak Admin API)
+        KC-->>Hub: 201 Created
+        Hub-->>Op: {client_id, client_secret, token_url, instructions}
+    end
+
+    rect rgb(255,248,240)
+        Note over Op,KC: Token acquisition (Maltego does this automatically)
+        Op->>KC: POST /realms/maltego-hub/protocol/openid-connect/token<br/>grant_type=client_credentials<br/>scope=transforms:execute
+        KC-->>Op: {access_token, expires_in: 300}
+    end
+
+    rect rgb(240,255,240)
+        Note over Op,T: Transform discovery (import once into Maltego)
+        Op->>Hub: GET /api/v2/manifest<br/>Authorization: Bearer &lt;token&gt;
+        Hub-->>Op: {transforms: [...], tokenUrl, hubUrl}
+        Note over Op: Maltego imports all transforms<br/>from manifest automatically
+    end
+
+    rect rgb(248,240,255)
+        Note over Op,T: Transform execution
+        Op->>Hub: POST /api/v2/transforms/DomainToIP<br/>Authorization: Bearer &lt;token&gt;<br/>Content-Type: application/xml<br/>&lt;MaltegoMessage&gt;...&lt;/MaltegoMessage&gt;
+        Hub->>Hub: Validate JWT<br/>• RS256 sig vs JWKS<br/>• aud = transform-hub<br/>• scope: transforms:execute<br/>• exp not expired
+        Hub->>T: DomainToIP.run(entity="example.com")
+        T->>T: dns.resolver.resolve("example.com", "A")
+        T-->>Hub: [IPv4Address: 93.184.216.34]
+        Hub-->>Op: &lt;MaltegoTransformResponseMessage&gt;<br/>  &lt;Entity Type="maltego.IPv4Address"&gt;<br/>    &lt;Value&gt;93.184.216.34&lt;/Value&gt;<br/>  &lt;/Entity&gt;<br/>&lt;/MaltegoTransformResponseMessage&gt;
+    end
+```

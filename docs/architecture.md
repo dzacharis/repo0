@@ -105,6 +105,25 @@ GET http://localhost:3500/v1.0/secrets/kubernetes/my-secret
 
 All sidecar-to-sidecar traffic is encrypted with mTLS (Dapr Sentry CA).
 
+## Maltego Transform Hub
+
+The hub is a self-hosted alternative to the Maltego iTDS + commercial on-prem ID subscription.
+Operators register once, receive Keycloak `client_id`/`client_secret` credentials, and the
+Maltego desktop client handles token acquisition and refresh automatically.
+
+Key design choices:
+
+- **No Maltego cloud dependency** — the `GET /api/v2/manifest` endpoint replaces iTDS discovery.
+- **Keycloak `maltego-hub` realm** — completely isolated from the main `myrealm`; separate
+  scopes (`transforms:execute`, `transforms:admin`), separate clients, separate audit trail.
+- **Transform auto-discovery** — any Python class decorated with `@registry.register` in
+  `src/transform-hub/transforms/` is available at startup; no config file to maintain.
+- **Dual format** — accepts both TRX XML (classic Maltego) and JSON (REST clients / curl testing).
+- **Dapr sidecar** — the hub participates in the Dapr mesh; future transforms can call other
+  internal services via Dapr service invocation without managing endpoints or mTLS themselves.
+
+See [transform-hub.md](transform-hub.md) for the operator guide and [diagrams.md](diagrams.md#9-maltego-transform-hub--auth--execution-flow) for the sequence diagram.
+
 ## mTLS Boundaries
 
 | Traffic path | Encryption |

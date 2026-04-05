@@ -224,6 +224,23 @@ Settings → Environments:
 - `dev` — no required reviewers (auto-deploys on push to `master`)
 - `prod` — add 1+ required reviewer(s); applies to both infra and app pipelines
 
+## Maltego Transform Hub
+
+An open-source replacement for the Maltego iTDS and the commercial on-prem ID subscription.
+Operators authenticate to **Keycloak** (`maltego-hub` realm) via OAuth2 client credentials,
+receive a 300 s bearer token, and call transform endpoints directly — zero Maltego cloud dependency.
+
+| Layer | Detail |
+|-------|--------|
+| **Authentication** | Keycloak `maltego-hub` realm · scopes `transforms:execute` / `transforms:admin` |
+| **Discovery** | `GET /api/v2/manifest` returns all transforms + token URL (iTDS replacement) |
+| **Execution** | `POST /api/v2/transforms/{name}` — accepts TRX XML or JSON |
+| **Registration** | `POST /api/v1/clients/register` — self-service, one Keycloak client per operator |
+| **Built-in transforms** | `DomainToIP`, `DomainToMX`, `DomainToWhois`, `URLToDomain`, `IPToGeoLocation` |
+| **Extend** | Drop a `.py` file in `src/transform-hub/transforms/` — auto-discovered on startup |
+
+See [docs/transform-hub.md](docs/transform-hub.md) for the full guide, including Maltego desktop configuration.
+
 ## Security Notes
 
 - **Never commit real secrets.** See `k8s/keycloak/secrets.yaml` for the placeholder pattern. Use Sealed Secrets, External Secrets Operator, or cloud-native secret managers in production.
@@ -234,10 +251,23 @@ Settings → Environments:
 - OPA policies (enforced in CI via Conftest) block deployments without resource limits or with `:latest` tags.
 - RKE2 (Rancher) applies the **CIS Kubernetes Benchmark** profile by default.
 
+## Documentation
+
+All docs live in [`docs/`](docs/) and are validated on every PR by the **`docs.yaml`** pipeline:
+
+| Check | Tool | Blocks merge? |
+|-------|------|:---:|
+| Markdown lint (style + formatting) | `markdownlint-cli2` | ✅ Yes |
+| Broken internal & external links | `lychee` | ✅ Yes |
+| Mermaid diagram syntax | `@mermaid-js/mermaid-cli` | ✅ Yes |
+| Spell check | `cspell` | ⚠️ Warn only |
+| Doc coverage (code changed without docs) | Custom script | ⚠️ Warn only |
+
 ## Further Reading
 
 - [Architecture & Design Decisions](docs/architecture.md)
-- [Architecture Diagrams](docs/diagrams.md) — 8 Mermaid diagrams
+- [Architecture Diagrams](docs/diagrams.md) — 9 Mermaid diagrams
+- [Maltego Transform Hub](docs/transform-hub.md)
 - [Observability — OpenSearch & Logging](docs/observability.md)
 - [Operator Runbook](docs/runbook.md)
 - [GKE Setup Guide](docs/cloud-providers/gcp.md)

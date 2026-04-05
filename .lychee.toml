@@ -1,0 +1,67 @@
+# Lychee link checker configuration
+# https://lychee.cli.rs/usage/config/
+
+# Check these file types
+include_verbatim = false
+
+# Timeout for each request in seconds
+timeout = 20
+
+# Maximum number of retries per request
+max_retries = 3
+
+# Maximum number of concurrent requests
+max_concurrency = 8
+
+# Accepted HTTP status codes (treat as valid)
+accept = [200, 206, 429]
+
+# Skip URLs matching these patterns (regex)
+exclude = [
+  # localhost and cluster-internal URLs
+  "http://localhost",
+  "https://localhost",
+  "http://127\\.0\\.0\\.1",
+  "https://keycloak\\.keycloak\\.svc\\.cluster\\.local",
+  "http://keycloak\\.keycloak\\.svc\\.cluster\\.local",
+  "https?://.*\\.svc\\.cluster\\.local",
+
+  # Placeholder/example domains used in docs
+  "https?://api\\.example\\.com",
+  "https?://auth\\.example\\.com",
+  "https?://app\\.example\\.com",
+  "https?://logs\\.example\\.com",
+
+  # Known rate-limited or authentication-required sites
+  "https://ip-api\\.com",
+
+  # GitHub Actions badge URLs (dynamic, unreliable in CI)
+  "https://github\\.com/.*/actions/workflows/.*/badge\\.svg",
+
+  # Anchors in the same file (handled by docs-structure job)
+  "^#"
+]
+
+# Exclude specific files from checking
+exclude_path = [
+  "node_modules",
+  ".git",
+  "terraform",
+  "k8s",
+  "src"
+]
+
+# User agent string
+user_agent = "lychee/0.14 docs-link-checker"
+
+# Follow redirects
+follow_redirects = true
+
+# Skip SSL verification errors (for internal/self-signed in examples)
+insecure = false
+
+# Only check these schemes
+scheme = ["https", "http"]
+
+# Require HTTPS for external links (warn only, not fail)
+require_https = false
