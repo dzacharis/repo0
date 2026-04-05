@@ -14,6 +14,15 @@ See [docs/diagrams.md](docs/diagrams.md) for Mermaid diagrams (render natively o
 - **CI/CD pipelines** — segregated security / infrastructure / applications pipelines
 - **Cloud topologies** — GKE, EKS, AKS, and Rancher diagrams
 - **Log flow** — OpenSearch + Fluentbit + Dapr binding
+- **Maltego auth sequence** — registration, token, discovery, execution
+- **Separation of concerns** — what you write vs. what the platform provides
+- **Transform request lifecycle** — which layer handles each step
+- **Capability responsibility matrix** — quadrant chart of ownership
+- **Platform layer model** — infrastructure → operators → middleware → services → business code
+- **Architecture decision map** — why Kong, Dapr, Keycloak, OpenSearch were chosen (with rejected alternatives)
+
+See [docs/developer-experience.md](docs/developer-experience.md) for the **batteries-included philosophy**
+and a step-by-step guide to adding a new transform with zero boilerplate.
 
 ## Stack
 
@@ -266,7 +275,8 @@ All docs live in [`docs/`](docs/) and are validated on every PR by the **`docs.y
 ## Further Reading
 
 - [Architecture & Design Decisions](docs/architecture.md)
-- [Architecture Diagrams](docs/diagrams.md) — 9 Mermaid diagrams
+- [Architecture Diagrams](docs/diagrams.md) — 14 Mermaid diagrams
+- [Developer Experience — Batteries Included](docs/developer-experience.md)
 - [Maltego Transform Hub](docs/transform-hub.md)
 - [Observability — OpenSearch & Logging](docs/observability.md)
 - [Operator Runbook](docs/runbook.md)
@@ -274,3 +284,9 @@ All docs live in [`docs/`](docs/) and are validated on every PR by the **`docs.y
 - [EKS Setup Guide](docs/cloud-providers/aws.md)
 - [AKS Setup Guide](docs/cloud-providers/azure.md)
 - [Rancher / RKE2 Guide](docs/cloud-providers/rancher.md)
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the full list of planned extensions, organized by theme:
+transforms, infrastructure, security, developer experience, observability, multi-tenancy, AI/LLM,
+packaging, and governance. Items are tagged with effort estimates (XS → XL).

@@ -494,3 +494,279 @@ sequenceDiagram
         Hub-->>Op: &lt;MaltegoTransformResponseMessage&gt;<br/>  &lt;Entity Type="maltego.IPv4Address"&gt;<br/>    &lt;Value&gt;93.184.216.34&lt;/Value&gt;<br/>  &lt;/Entity&gt;<br/>&lt;/MaltegoTransformResponseMessage&gt;
     end
 ```
+
+---
+
+## 10. Separation of Concerns — What You Write vs. What the Platform Provides
+
+This diagram captures the core design philosophy: **business developers write only value code**
+(transforms, domain logic, data-source adapters). Every cross-cutting concern is handled by a
+platform layer that is assembled from no-code middleware.
+
+```mermaid
+graph TB
+    subgraph Dev["👨‍💻 Business Developer writes…"]
+        direction TB
+        T1["🔬 Transform: DomainToIP\n<small>dns.resolve(entity.value)</small>"]
+        T2["🔬 Transform: DomainToWHOIS\n<small>rdap.lookup(entity.value)</small>"]
+        T3["🔬 Transform: IPToGeo\n<small>ip_api.get(entity.value)</small>"]
+        T4["🛠️ Utility / Helper\n<small>shared parsing, enrichment</small>"]
+    end
+
+    subgraph Platform["⚙️ Platform provides (no app code needed)…"]
+        direction TB
+
+        subgraph Kong["🦍 Kong — Edge Layer"]
+            K1["TLS termination"]
+            K2["OIDC / JWT validation"]
+            K3["Rate limiting"]
+            K4["CORS headers"]
+            K5["Request-ID tracing"]
+            K6["HTTP access log → OpenSearch"]
+        end
+
+        subgraph Dapr["🔷 Dapr — Application Runtime"]
+            D1["State management\n(Redis / any backend)"]
+            D2["Pub/Sub messaging\n(Redis / Kafka / etc.)"]
+            D3["Secret injection\n(K8s / Vault / cloud)"]
+            D4["Service invocation\n(mTLS + retry + CB)"]
+            D5["Output binding\n(OpenSearch audit log)"]
+            D6["Distributed tracing\n(Zipkin / OTLP)"]
+        end
+
+        subgraph Keycloak["🔑 Keycloak — Identity Layer"]
+            KC1["Realm / tenant isolation"]
+            KC2["Client registration & scopes"]
+            KC3["JWKS key rotation"]
+            KC4["Brute-force protection"]
+            KC5["Self-service user registration"]
+        end
+    end
+
+    subgraph Infra["🏗️ Infrastructure (Terraform / Helm)"]
+        I1["Auto-scaling (HPA)"]
+        I2["Pod disruption budgets"]
+        I3["OPA policy enforcement"]
+        I4["cert-manager (TLS lifecycle)"]
+        I5["OpenSearch (logs + dashboards)"]
+        I6["Multi-cloud overlays"]
+    end
+
+    Dev -->|"deployed as\n@register decorator"| Platform
+    Platform --> Infra
+
+    classDef devBox fill:#e8f5e9,stroke:#388e3c,color:#1b5e20
+    classDef kongBox fill:#fff3e0,stroke:#f57c00,color:#e65100
+    classDef daprBox fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
+    classDef kcBox fill:#fce4ec,stroke:#c62828,color:#b71c1c
+    classDef infraBox fill:#f3e5f5,stroke:#6a1b9a,color:#4a148c
+
+    class T1,T2,T3,T4 devBox
+    class K1,K2,K3,K4,K5,K6 kongBox
+    class D1,D2,D3,D4,D5,D6 daprBox
+    class KC1,KC2,KC3,KC4,KC5 kcBox
+    class I1,I2,I3,I4,I5,I6 infraBox
+```
+
+---
+
+## 11. Transform Request Lifecycle — Which Layer Handles What
+
+End-to-end trace of a single transform call, annotated by the responsible platform layer.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as Business Developer
+    participant CI as GitHub Actions CI
+    participant Kong as 🦍 Kong (edge)
+    participant Hub as 🔬 Transform Hub (app)
+    participant Dapr as 🔷 Dapr Sidecar
+    participant KC as 🔑 Keycloak
+    participant DS as 📡 Data Source (DNS/RDAP/…)
+    participant OS as 📊 OpenSearch
+
+    Note over Dev,OS: — Deploy path (write once, runs everywhere) —
+
+    Dev->>CI: git push (new transform class)
+    CI->>CI: lint · unit-test · build image · Trivy scan
+    CI->>Hub: kustomize deploy (rolling update)
+    Hub->>Hub: _autodiscover() registers transform<br/>via @register decorator
+
+    Note over Dev,OS: — Runtime path (zero boilerplate per request) —
+
+    Dev->>Kong: POST /transforms/api/v2/transforms/DomainToIP<br/>Authorization: Bearer <token>
+
+    rect rgb(255,243,224)
+        Note over Kong: Kong handles (no app code)
+        Kong->>Kong: TLS termination
+        Kong->>KC: Validate OIDC token
+        KC-->>Kong: token valid, scopes: transforms:execute
+        Kong->>Kong: Rate-limit check (Redis)
+        Kong->>Kong: Inject X-Request-ID header
+    end
+
+    Kong->>Hub: HTTP POST (plain, in-cluster)
+
+    rect rgb(227,242,253)
+        Note over Hub: App handles (value code only)
+        Hub->>Hub: Decode XML / JSON body
+        Hub->>Hub: Dispatch to DomainToIP.run()
+        Hub->>DS: dns.resolve("example.com", "A")
+        DS-->>Hub: [93.184.216.34]
+        Hub-->>Kong: MaltegoTransformResponseMessage
+    end
+
+    rect rgb(232,245,233)
+        Note over Dapr,OS: Dapr handles (no app code)
+        Hub->>Dapr: dapr.invoke binding "audit-log"
+        Dapr->>OS: POST /security-events-* (structured log)
+        Dapr->>Dapr: Metrics + trace span emitted
+    end
+
+    Kong-->>Dev: 200 OK + response
+```
+
+---
+
+## 12. Capability Responsibility Matrix
+
+Who is responsible for each platform capability — no overlaps, no gaps.
+
+```mermaid
+quadrantChart
+    title Platform Capability Ownership
+    x-axis "Business Developer" --> "Platform / Ops"
+    y-axis "Low Complexity" --> "High Complexity"
+
+    quadrant-1 Platform-owned, high complexity
+    quadrant-2 Shared or config-driven
+    quadrant-3 Developer-owned, low complexity
+    quadrant-4 Platform-owned, low complexity
+
+    TLS termination: [0.95, 0.75]
+    mTLS between services: [0.92, 0.85]
+    JWT validation: [0.88, 0.65]
+    OIDC token issuance: [0.85, 0.80]
+    Rate limiting: [0.90, 0.50]
+    CORS headers: [0.88, 0.30]
+    Secret injection: [0.82, 0.70]
+    Distributed tracing: [0.80, 0.60]
+    Pub/Sub routing: [0.75, 0.72]
+    State management: [0.70, 0.65]
+    Audit log binding: [0.72, 0.45]
+    Auto-scaling: [0.93, 0.55]
+    OPA policy: [0.78, 0.68]
+    Transform logic: [0.08, 0.40]
+    Entity parsing: [0.15, 0.25]
+    Domain helpers: [0.12, 0.20]
+    Data source calls: [0.10, 0.35]
+    Response mapping: [0.12, 0.30]
+```
+
+---
+
+## 13. Platform Layer Model — Dependency Stack
+
+Shows how each layer depends on the one below. Business code sits at the top and is intentionally thin.
+
+```mermaid
+graph BT
+    subgraph L0["Layer 0 — Cloud Infrastructure"]
+        direction LR
+        VPC["VPC / Subnets"]
+        K8s["Kubernetes Cluster\n(GKE / EKS / AKS / RKE2)"]
+        Managed["Managed Services\n(PostgreSQL · Redis · Object Store)"]
+    end
+
+    subgraph L1["Layer 1 — Platform Operators"]
+        direction LR
+        CM["cert-manager\nTLS lifecycle"]
+        DaprOp["Dapr Operator\nSidecar injection"]
+        OPA["OPA / Gatekeeper\nPolicy enforcement"]
+    end
+
+    subgraph L2["Layer 2 — Middleware (no-code)"]
+        direction LR
+        KongGW["Kong Gateway\n• Auth  • Rate-limit\n• CORS  • Tracing"]
+        DaprRT["Dapr Runtime\n• State  • Pub/Sub\n• Secrets  • Bindings"]
+        KC2["Keycloak\n• OIDC  • Realms\n• JWKS  • Scopes"]
+        OS2["OpenSearch\n• Logs  • Alerts\n• Dashboards"]
+    end
+
+    subgraph L3["Layer 3 — Platform Services"]
+        direction LR
+        HubSvc["Transform Hub\n(FastAPI shell)"]
+        Manifest["Manifest API\n/api/v2/manifest"]
+        ClientReg["Client Registry\n/register  /token"]
+    end
+
+    subgraph L4["Layer 4 — Business Code  ← developer writes here"]
+        direction LR
+        TR1["Transform:\nDomainToIP"]
+        TR2["Transform:\nDomainToWHOIS"]
+        TR3["Transform:\nIPToGeo"]
+        TRN["Transform:\n…custom…"]
+    end
+
+    L0 --> L1
+    L1 --> L2
+    L2 --> L3
+    L3 --> L4
+
+    classDef l0 fill:#eceff1,stroke:#546e7a
+    classDef l1 fill:#f3e5f5,stroke:#7b1fa2
+    classDef l2 fill:#fff8e1,stroke:#f9a825
+    classDef l3 fill:#e3f2fd,stroke:#1565c0
+    classDef l4 fill:#e8f5e9,stroke:#2e7d32,stroke-width:3px
+
+    class VPC,K8s,Managed l0
+    class CM,DaprOp,OPA l1
+    class KongGW,DaprRT,KC2,OS2 l2
+    class HubSvc,Manifest,ClientReg l3
+    class TR1,TR2,TR3,TRN l4
+```
+
+---
+
+## 14. Architecture Decision Map
+
+Key decisions and the alternatives that were evaluated, shown as a decision tree.
+
+```mermaid
+flowchart TD
+    Start([Platform Design Goals])
+
+    Start --> G1["Single entry-point\nfor all clients"]
+    Start --> G2["Developers write\nvalue code only"]
+    Start --> G3["Identity-first:\nevery call authenticated"]
+    Start --> G4["Cloud-portable,\nnot cloud-locked"]
+    Start --> G5["Auditable:\ncomplete event trail"]
+
+    G1 -->|chosen| Kong["Kong Ingress Controller\n✔ Plugin model (OIDC, RL, CORS)\n✔ K8s-native CRDs\n✔ Active community"]
+    G1 -->|rejected| NGX["Nginx / Traefik\n✘ No built-in OIDC plugin\n✘ Rate-limit not cluster-aware"]
+    G1 -->|rejected| Envoy["Envoy + Istio\n✘ High operational overhead\n✘ mTLS conflicts with Dapr"]
+
+    G2 -->|chosen| Dapr["Dapr Sidecar Runtime\n✔ Language-agnostic API\n✔ Component swap w/o code change\n✔ Built-in resiliency policies"]
+    G2 -->|rejected| SDK["Custom SDK / Library\n✘ Re-implement per language\n✘ Versioning burden"]
+    G2 -->|rejected| Mesh["Service Mesh only\n✘ No state/pub-sub/bindings\n✘ App must manage its own retries"]
+
+    G3 -->|chosen| KC["Keycloak\n✔ OIDC + realm isolation\n✔ JWKS rotation\n✔ Self-hosted (no vendor lock)"]
+    G3 -->|rejected| Auth0["Auth0 / Okta\n✘ SaaS cost at scale\n✘ Data residency constraints"]
+    G3 -->|rejected| Dex["Dex\n✘ Minimal admin UI\n✘ No brute-force protection"]
+
+    G4 -->|chosen| TF["Terraform per-provider modules\n+ Kustomize overlays\n✔ Same K8s manifests everywhere\n✔ Provider-specific via overlays"]
+    G4 -->|rejected| CDKTF["Single cloud abstraction layer\n✘ Lowest-common-denominator\n✘ Loses managed service features"]
+
+    G5 -->|chosen| OS["OpenSearch + Dapr binding\n✔ Structured audit log\n✔ ISM retention policies\n✔ OIDC dashboard SSO"]
+    G5 -->|rejected| CW["CloudWatch / Azure Monitor\n✘ Vendor-specific\n✘ No unified cross-cloud view"]
+    G5 -->|rejected| ELK["Elastic (Elastic Cloud)\n✘ License cost at scale\n✘ SSPL restrictions"]
+
+    classDef goal fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
+    classDef chosen fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
+    classDef rejected fill:#ffebee,stroke:#c62828,color:#b71c1c
+
+    class G1,G2,G3,G4,G5 goal
+    class Kong,Dapr,KC,TF,OS chosen
+    class NGX,Envoy,SDK,Mesh,Auth0,Dex,CDKTF,CW,ELK rejected
+```
