@@ -1,0 +1,51 @@
+# Fleet GitOps Bundle
+# Apply this to the Rancher management cluster to enable automatic syncing
+# of the k8s/ manifests from this repository to the downstream cluster.
+#
+# kubectl apply -f k8s/cloud-overlays/rancher/fleet-bundle.yaml
+# (on the Rancher management cluster, in the fleet-local namespace)
+
+apiVersion: fleet.cattle.io/v1alpha1
+kind: GitRepo
+metadata:
+  name: platform-infra
+  namespace: fleet-local    # or fleet-default for downstream clusters
+spec:
+  repo: https://github.com/dzacharis/repo0
+  branch: master
+  paths:
+    - k8s/namespaces
+    - k8s/cert-manager
+    - k8s/kong/plugins
+    - k8s/dapr/components
+    - k8s/dapr/dapr-configuration.yaml
+    - k8s/keycloak/realm-config.yaml
+    - k8s/apps/sample-app
+  # Use a private repo? Add a secret:
+  # clientSecretName: git-credentials
+  targets:
+    - name: platform-cluster
+      clusterSelector:
+        matchLabels:
+          environment: prod
+  # Helm overrides applied by Fleet during sync
+  helm:
+    releaseName: platform
+  # Force re-apply on drift
+  forceSyncGeneration: 1
+---
+apiVersion: fleet.cattle.io/v1alpha1
+kind: GitRepo
+metadata:
+  name: platform-helm-charts
+  namespace: fleet-local
+spec:
+  repo: https://github.com/dzacharis/repo0
+  branch: master
+  paths:
+    - k8s/cloud-overlays/rancher
+  targets:
+    - name: platform-cluster
+      clusterSelector:
+        matchLabels:
+          environment: prod

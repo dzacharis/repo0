@@ -1,0 +1,39 @@
+# GKE-specific Kong Helm value overrides
+# Usage: helm upgrade --install kong kong/ingress -n kong \
+#          -f k8s/kong/helm-values.yaml \
+#          -f k8s/cloud-overlays/gcp/kong-values.yaml
+
+proxy:
+  annotations:
+    # Use Google Cloud L4 External Load Balancer
+    cloud.google.com/load-balancer-type: "External"
+    # Reserve a static IP: gcloud compute addresses create kong-ip --global
+    # kubernetes.io/ingress.global-static-ip-name: kong-ip
+
+  # GKE Autopilot requires explicit resource requests
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 1Gi
+
+# GKE Workload Identity annotation for Kong SA
+podAnnotations:
+  iam.gke.io/gcp-service-account: ""  # Set to your WI SA email if needed
+
+# GKE: use topology spread across zones
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app: kong-kong
+
+# Container-native load balancing (NEG) for GKE
+# This enables direct pod routing without kube-proxy
+service:
+  annotations:
+    cloud.google.com/neg: '{"ingress": true}'

@@ -1,6 +1,17 @@
 # Kubernetes Platform Infrastructure
 
 A production-ready Kubernetes platform with Kong API Gateway, Dapr, Keycloak, and automated CI/CD pipelines.
+Deployable on **Google Cloud (GKE)**, **AWS (EKS)**, or **Rancher (RKE2)** — or any Kubernetes v1.27+ cluster.
+
+## Architecture Diagrams
+
+See [docs/diagrams.md](docs/diagrams.md) for Mermaid diagrams (render natively on GitHub):
+
+- **Platform overview** — component topology and data flow
+- **OIDC auth sequence** — Kong + Keycloak token exchange step-by-step
+- **Dapr runtime** — sidecar communication, state/pub-sub, mTLS
+- **CI/CD pipeline** — lint → scan → build → deploy-dev → deploy-prod
+- **Cloud provider topologies** — GKE, EKS, and Rancher diagrams
 
 ## Stack
 
@@ -12,51 +23,72 @@ A production-ready Kubernetes platform with Kong API Gateway, Dapr, Keycloak, an
 | **cert-manager** | Automatic TLS certificate provisioning | v1.14.x |
 | **Redis** | Backing store for Dapr state & pub/sub | (bitnami/redis) |
 
+## Cloud Provider Support
+
+| Provider | Guide | Terraform | Backing Services |
+|----------|-------|-----------|-----------------|
+| **Google Cloud (GKE)** | [docs/cloud-providers/gcp.md](docs/cloud-providers/gcp.md) | `terraform/gcp/` | Cloud SQL + Memorystore + Artifact Registry |
+| **AWS (EKS)** | [docs/cloud-providers/aws.md](docs/cloud-providers/aws.md) | `terraform/aws/` | RDS + ElastiCache + ECR |
+| **Rancher (RKE2)** | [docs/cloud-providers/rancher.md](docs/cloud-providers/rancher.md) | `terraform/rancher/` | Fleet GitOps + Monitoring built-in |
+| **Generic K8s** | This README | — | Self-hosted Redis + Postgres |
+
+Each cloud provider has:
+- A Terraform module that provisions the cluster and all managed backing services
+- Helm value overrides in `k8s/cloud-overlays/<provider>/` that patch the base values for cloud-specific annotations and managed service endpoints
+- A step-by-step guide with DNS, secret management, and GitHub Actions integration
+
 ## Directory Structure
 
 ```
 .
+├── docs/
+│   ├── diagrams.md             # Mermaid architecture diagrams
+│   ├── architecture.md         # Narrative architecture and design decisions
+│   ├── runbook.md              # Ops runbook: scaling, secret rotation, break-glass
+│   └── cloud-providers/
+│       ├── gcp.md              # GKE setup guide (step-by-step)
+│       ├── aws.md              # EKS setup guide (step-by-step)
+│       └── rancher.md          # Rancher + RKE2 + Fleet guide
+├── terraform/
+│   ├── gcp/                    # GKE + Cloud SQL + Memorystore + Artifact Registry
+│   ├── aws/                    # EKS + RDS + ElastiCache + ECR
+│   └── rancher/                # Rancher cluster + Fleet + Monitoring
 ├── k8s/
-│   ├── namespaces/         # All namespace definitions
+│   ├── namespaces/             # All namespace definitions
 │   ├── kong/
-│   │   ├── helm-values.yaml        # Kong Helm configuration
-│   │   └── plugins/
-│   │       ├── jwt-auth.yaml       # JWT authentication plugin
-│   │       ├── rate-limiting.yaml  # Rate limiting (global + strict)
-│   │       ├── cors.yaml           # CORS headers
-│   │       └── oidc-keycloak.yaml  # OIDC → Keycloak integration
+│   │   ├── helm-values.yaml    # Kong Helm configuration (base)
+│   │   └── plugins/            # jwt-auth, rate-limiting, cors, oidc-keycloak
 │   ├── dapr/
-│   │   ├── helm-values.yaml        # Dapr control-plane config (HA)
-│   │   ├── dapr-configuration.yaml # Tracing, middleware pipeline
-│   │   └── components/
-│   │       ├── statestore.yaml     # Redis state store
-│   │       ├── pubsub.yaml         # Redis pub/sub broker
-│   │       ├── secretstore.yaml    # Kubernetes secret store
-│   │       └── resiliency.yaml     # Retry / circuit-breaker policies
+│   │   ├── helm-values.yaml    # Dapr control-plane (HA mode)
+│   │   ├── dapr-configuration.yaml
+│   │   └── components/         # statestore, pubsub, secretstore, resiliency
 │   ├── keycloak/
-│   │   ├── helm-values.yaml        # Keycloak + Postgres config
-│   │   ├── realm-config.yaml       # ConfigMap with realm JSON (kong, frontend, sample-service clients)
-│   │   └── secrets.yaml            # Secret placeholders (never commit real values)
-│   ├── cert-manager/
-│   │   ├── helm-values.yaml
-│   │   └── cluster-issuer.yaml     # Let's Encrypt staging + prod issuers
-│   └── apps/
-│       └── sample-app/
-│           ├── deployment.yaml     # App with Dapr sidecar annotations
-│           ├── service.yaml
-│           ├── ingress.yaml        # Kong ingress with plugins
-│           └── hpa.yaml            # Horizontal Pod Autoscaler
-├── .github/
-│   └── workflows/
-│       ├── ci.yaml                 # Lint, security scan, build & push image
-│       ├── deploy-dev.yaml         # Auto-deploy to dev on push to master
-│       └── deploy-prod.yaml        # Manual deploy to prod with approval gate
+│   │   ├── helm-values.yaml    # Keycloak + Postgres
+│   │   ├── realm-config.yaml   # Realm: kong, frontend, sample-service clients
+│   │   └── secrets.yaml        # Placeholders only — never commit real values
+│   ├── cert-manager/           # Let's Encrypt staging + prod ClusterIssuers
+│   ├── apps/sample-app/        # Deployment (Dapr sidecar), Service, Ingress, HPA
+│   ├── kustomize/
+│   │   ├── base/               # All manifests wired together
+│   │   └── overlays/
+│   │       ├── dev/            # 1 replica, smaller resources, dev image tag
+│   │       └── prod/           # 3 replicas, production resources, pinned image
+│   └── cloud-overlays/
+│       ├── gcp/                # GKE-specific: Cloud SQL, Memorystore, NLB annotations
+│       ├── aws/                # EKS-specific: RDS, ElastiCache, NLB + IRSA
+│       └── rancher/            # Rancher: Fleet bundle, Prometheus ServiceMonitor
+├── policies/
+│   └── deployments.rego        # OPA policies: resource limits, no :latest, runAsNonRoot
+├── .github/workflows/
+│   ├── ci.yaml                 # Lint → Kustomize validate → OPA → Trivy → build
+│   ├── deploy-dev.yaml         # Auto-deploy on master push
+│   └── deploy-prod.yaml        # Manual + confirmation + required reviewer
 └── scripts/
-    ├── install.sh                  # Bootstrap the full stack
-    └── teardown.sh                 # Remove all components
+    ├── install.sh              # Full bootstrap (--dry-run, --skip-infra, --skip-apps)
+    └── teardown.sh             # Clean uninstall
 ```
 
-## Quick Start
+## Quick Start (Generic Kubernetes)
 
 ### Prerequisites
 
@@ -67,21 +99,20 @@ A production-ready Kubernetes platform with Kong API Gateway, Dapr, Keycloak, an
 ### 1. Create required secrets
 
 ```bash
-# Keycloak admin password
+kubectl create namespace keycloak redis apps
+
 kubectl create secret generic keycloak-admin-secret \
   --from-literal=admin-password='<strong-password>' \
   --namespace keycloak
 
-# Keycloak PostgreSQL passwords
 kubectl create secret generic keycloak-postgresql-secret \
   --from-literal=postgres-password='<pg-admin-password>' \
   --from-literal=password='<keycloak-db-password>' \
   --namespace keycloak
 
-# Redis password
 kubectl create secret generic redis-secret \
   --from-literal=redis-password='<redis-password>' \
-  --namespace redis --create-namespace
+  --namespace redis
 ```
 
 ### 2. Run the install script
@@ -90,17 +121,17 @@ kubectl create secret generic redis-secret \
 ./scripts/install.sh
 ```
 
-Options:
-- `--skip-infra` — skip infrastructure components, only deploy apps
-- `--skip-apps`  — deploy infrastructure only
-- `--dry-run`    — print commands without applying
+| Flag | Effect |
+|------|--------|
+| `--skip-infra` | Only deploy apps (infra already installed) |
+| `--skip-apps` | Only deploy infrastructure |
+| `--dry-run` | Print commands without applying |
 
 ### 3. Configure DNS
 
-Point your domain records at the Kong proxy LoadBalancer IP:
-
 ```bash
-kubectl get svc -n kong -l app=kong-kong-proxy
+kubectl get svc -n kong kong-kong-proxy
+# Point api.example.com and auth.example.com at the EXTERNAL-IP
 ```
 
 Update hostnames in:
@@ -108,66 +139,76 @@ Update hostnames in:
 - `k8s/apps/sample-app/ingress.yaml` → `spec.rules[].host`
 - `k8s/cert-manager/cluster-issuer.yaml` → `spec.acme.email`
 
+## Cloud-Specific Quick Start
+
+### Google Cloud (GKE)
+
+```bash
+cd terraform/gcp
+cp terraform.tfvars.example terraform.tfvars  # edit with your project_id
+terraform apply
+$(terraform output -raw get_credentials_command)
+./scripts/install.sh
+# See docs/cloud-providers/gcp.md for full guide
+```
+
+### AWS (EKS)
+
+```bash
+cd terraform/aws
+cp terraform.tfvars.example terraform.tfvars  # edit region, cluster_name
+terraform apply
+$(terraform output -raw get_credentials_command)
+./scripts/install.sh
+# See docs/cloud-providers/aws.md for full guide
+```
+
+### Rancher (RKE2)
+
+```bash
+cd terraform/rancher
+# Edit terraform.tfvars with your Rancher API URL and token
+terraform apply
+# Fleet will automatically sync manifests from this repo
+# See docs/cloud-providers/rancher.md for full guide
+```
+
 ## GitHub Actions
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `ci.yaml` | Every push / PR | Lint manifests, security scan (Trivy + Checkov), build & push image |
+| `ci.yaml` | Every push / PR | Lint, Kustomize validate, OPA policies, Trivy/Checkov scan, image build |
 | `deploy-dev.yaml` | Push to `master` | Full infra + app deploy to dev cluster |
-| `deploy-prod.yaml` | Manual (`workflow_dispatch`) | Requires approval gate + confirmation string |
+| `deploy-prod.yaml` | Manual (`workflow_dispatch`) | Confirmation string + required reviewer gate + rollback on failure |
 
 ### Required GitHub Secrets
 
 | Secret | Description |
 |--------|-------------|
-| `DEV_KUBECONFIG` | kubeconfig for dev cluster (base64-encoded) |
-| `PROD_KUBECONFIG` | kubeconfig for prod cluster (base64-encoded) |
+| `DEV_KUBECONFIG` | base64-encoded kubeconfig for dev cluster |
+| `PROD_KUBECONFIG` | base64-encoded kubeconfig for prod cluster |
 
 ### Required GitHub Environments
 
-Create two environments in repository Settings → Environments:
+Settings → Environments:
 - `dev` — no required reviewers
-- `prod` — require 1+ reviewers before deploy
-
-## Architecture
-
-```
-Internet
-    │
-    ▼
-┌─────────────────────────────────────────────┐
-│  Kong Ingress Controller (LoadBalancer)     │
-│  - JWT / OIDC auth (→ Keycloak)             │
-│  - Rate limiting                            │
-│  - CORS                                     │
-│  - TLS termination (cert-manager)           │
-└─────────────────────┬───────────────────────┘
-                      │
-          ┌───────────▼───────────┐
-          │    apps namespace     │
-          │                       │
-          │  ┌─────────────────┐  │
-          │  │   sample-app    │  │
-          │  │  + dapr sidecar │  │
-          │  └────────┬────────┘  │
-          └───────────┼───────────┘
-                      │ Dapr APIs
-        ┌─────────────┼─────────────┐
-        │             │             │
-        ▼             ▼             ▼
-    State Store    Pub/Sub     Service Invocation
-    (Redis)        (Redis)     (mTLS via Dapr)
-
-Keycloak (keycloak namespace)
-  - Realm: myrealm
-  - Clients: kong, frontend, sample-service
-  - Backed by PostgreSQL
-```
+- `prod` — add 1+ required reviewer(s)
 
 ## Security Notes
 
-- **Never commit real secrets.** Use Sealed Secrets or External Secrets Operator in production.
-- All inter-service communication inside the mesh uses Dapr mTLS.
-- Kong enforces JWT/OIDC validation at the edge before traffic reaches apps.
-- Keycloak brute-force protection is enabled in the realm config.
-- All pods run as non-root with `readOnlyRootFilesystem: true`.
+- **Never commit real secrets.** See `k8s/keycloak/secrets.yaml` for the placeholder pattern. Use Sealed Secrets, External Secrets Operator, or cloud-native secret managers in production.
+- All sidecar-to-sidecar traffic uses **Dapr mTLS** (Sentry-issued certificates).
+- Kong enforces **JWT/OIDC validation** at the edge — apps receive pre-validated user headers.
+- Keycloak has **brute-force protection** enabled in the realm config.
+- All pods run as **non-root** with `readOnlyRootFilesystem: true` and dropped capabilities.
+- OPA policies (enforced in CI via Conftest) block deployments without resource limits or with `:latest` tags.
+- RKE2 (Rancher) applies the **CIS Kubernetes Benchmark** profile by default.
+
+## Further Reading
+
+- [Architecture & Design Decisions](docs/architecture.md)
+- [Operator Runbook](docs/runbook.md)
+- [Architecture Diagrams](docs/diagrams.md)
+- [GKE Setup Guide](docs/cloud-providers/gcp.md)
+- [EKS Setup Guide](docs/cloud-providers/aws.md)
+- [Rancher / RKE2 Guide](docs/cloud-providers/rancher.md)

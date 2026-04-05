@@ -1,0 +1,26 @@
+# AWS EKS-specific Kong Helm value overrides
+# Usage: helm upgrade --install kong kong/ingress -n kong \
+#          -f k8s/kong/helm-values.yaml \
+#          -f k8s/cloud-overlays/aws/kong-values.yaml
+
+proxy:
+  annotations:
+    # AWS Network Load Balancer (Layer 4, preserves client IPs)
+    service.beta.kubernetes.io/aws-load-balancer-type: "external"
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+    # Enable cross-zone load balancing
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    # ACM certificate for TLS (optional — can use cert-manager instead)
+    # service.beta.kubernetes.io/aws-load-balancer-ssl-cert: "arn:aws:acm:us-east-1:123456:certificate/abc"
+    # service.beta.kubernetes.io/aws-load-balancer-ssl-ports: "443"
+    # service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "http"
+
+# Spread across AZs
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app: kong-kong

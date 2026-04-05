@@ -1,5 +1,9 @@
 # Architecture
 
+> **Visual diagrams**: See [diagrams.md](./diagrams.md) for Mermaid diagrams covering the overall
+> platform topology, OIDC auth flow, Dapr runtime, CI/CD pipeline, and cloud provider topologies.
+> All diagrams render natively on GitHub.
+
 ## Overview
 
 This platform is a Kubernetes-native infrastructure stack composed of:

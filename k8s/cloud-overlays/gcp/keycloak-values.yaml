@@ -1,0 +1,45 @@
+# GKE-specific Keycloak Helm value overrides
+# Uses Cloud SQL (PostgreSQL) instead of bundled Postgres subchart
+# Usage: helm upgrade --install keycloak bitnami/keycloak -n keycloak \
+#          -f k8s/keycloak/helm-values.yaml \
+#          -f k8s/cloud-overlays/gcp/keycloak-values.yaml
+
+# Disable bundled PostgreSQL — use Cloud SQL
+postgresql:
+  enabled: false
+
+# Point to Cloud SQL private IP (output from Terraform)
+externalDatabase:
+  host: ""        # Set to terraform output: cloud_sql_private_ip
+  port: 5432
+  database: keycloak
+  user: keycloak
+  existingSecret: keycloak-postgresql-secret
+  existingSecretPasswordKey: password
+
+extraEnvVars:
+  - name: KC_PROXY
+    value: edge
+  - name: KC_HOSTNAME_STRICT
+    value: "false"
+  - name: KC_HOSTNAME_STRICT_HTTPS
+    value: "false"
+  - name: KEYCLOAK_EXTRA_ARGS
+    value: "--import-realm"
+  # Cloud SQL Auth Proxy is the recommended approach for GKE → Cloud SQL
+  # Alternatively use private IP directly (used here for simplicity)
+  - name: KC_DB_URL
+    value: ""   # Set to: jdbc:postgresql://<CLOUD_SQL_IP>:5432/keycloak
+
+# GKE Workload Identity annotation
+podAnnotations:
+  iam.gke.io/gcp-service-account: ""  # optional, only if KC needs GCP API access
+
+# Spread across GKE zones
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: keycloak
