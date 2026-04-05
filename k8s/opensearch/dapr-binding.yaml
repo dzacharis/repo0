@@ -1,0 +1,25 @@
+# Dapr Output Binding: write app audit events to OpenSearch
+# Apps call: POST http://localhost:3500/v1.0/bindings/opensearch-audit
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: opensearch-audit
+  namespace: apps
+spec:
+  type: bindings.elasticsearch
+  version: v1
+  metadata:
+    - name: addresses
+      value: "https://opensearch-cluster-master.opensearch.svc.cluster.local:9200"
+    - name: index
+      value: "platform-audit"
+    - name: username
+      value: "fluentbit"
+    - name: password
+      secretKeyRef:
+        name: opensearch-secret
+        key: fluentbit-password
+    - name: skipTLSVerify
+      value: "false"
+auth:
+  secretStore: kubernetes

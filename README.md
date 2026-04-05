@@ -1,17 +1,19 @@
 # Kubernetes Platform Infrastructure
 
-A production-ready Kubernetes platform with Kong API Gateway, Dapr, Keycloak, and automated CI/CD pipelines.
-Deployable on **Google Cloud (GKE)**, **AWS (EKS)**, or **Rancher (RKE2)** — or any Kubernetes v1.27+ cluster.
+A production-ready Kubernetes platform with Kong API Gateway, Dapr, Keycloak, OpenSearch, and
+segregated CI/CD pipelines. Deployable on **GKE**, **EKS**, **AKS**, or **Rancher (RKE2)** —
+or any Kubernetes v1.27+ cluster.
 
 ## Architecture Diagrams
 
 See [docs/diagrams.md](docs/diagrams.md) for Mermaid diagrams (render natively on GitHub):
 
-- **Platform overview** — component topology and data flow
-- **OIDC auth sequence** — Kong + Keycloak token exchange step-by-step
-- **Dapr runtime** — sidecar communication, state/pub-sub, mTLS
-- **CI/CD pipeline** — lint → scan → build → deploy-dev → deploy-prod
-- **Cloud provider topologies** — GKE, EKS, and Rancher diagrams
+- **Platform overview** — full component graph with namespaces
+- **OIDC auth sequence** — Kong + Keycloak token exchange, step-by-step
+- **Dapr runtime** — sidecar mTLS, state/pub-sub, control plane
+- **CI/CD pipelines** — segregated security / infrastructure / applications pipelines
+- **Cloud topologies** — GKE, EKS, AKS, and Rancher diagrams
+- **Log flow** — OpenSearch + Fluentbit + Dapr binding
 
 ## Stack
 
@@ -20,38 +22,54 @@ See [docs/diagrams.md](docs/diagrams.md) for Mermaid diagrams (render natively o
 | **Kong Ingress Controller** | API Gateway, routing, auth plugins | 3.6 / chart 0.4.x |
 | **Dapr** | Distributed runtime (state, pub/sub, service invocation) | 1.13.x |
 | **Keycloak** | Identity & Access Management (OIDC/OAuth2) | 24.0 |
+| **OpenSearch** | Log aggregation, full-text search, security analytics | 2.14 |
+| **OpenSearch Dashboards** | Kibana-compatible UI with Keycloak SSO | 2.14 |
+| **Fluentbit** | DaemonSet log collector and router | 3.1 |
 | **cert-manager** | Automatic TLS certificate provisioning | v1.14.x |
 | **Redis** | Backing store for Dapr state & pub/sub | (bitnami/redis) |
 
 ## Cloud Provider Support
 
-| Provider | Guide | Terraform | Backing Services |
-|----------|-------|-----------|-----------------|
-| **Google Cloud (GKE)** | [docs/cloud-providers/gcp.md](docs/cloud-providers/gcp.md) | `terraform/gcp/` | Cloud SQL + Memorystore + Artifact Registry |
-| **AWS (EKS)** | [docs/cloud-providers/aws.md](docs/cloud-providers/aws.md) | `terraform/aws/` | RDS + ElastiCache + ECR |
-| **Rancher (RKE2)** | [docs/cloud-providers/rancher.md](docs/cloud-providers/rancher.md) | `terraform/rancher/` | Fleet GitOps + Monitoring built-in |
+| Provider | Guide | Terraform | Managed Backing Services |
+|----------|-------|-----------|--------------------------|
+| **Google Cloud (GKE)** | [docs/cloud-providers/gcp.md](docs/cloud-providers/gcp.md) | `terraform/gcp/` | Cloud SQL · Memorystore · Artifact Registry · Secret Manager |
+| **AWS (EKS)** | [docs/cloud-providers/aws.md](docs/cloud-providers/aws.md) | `terraform/aws/` | RDS · ElastiCache · ECR · Secrets Manager |
+| **Azure (AKS)** | [docs/cloud-providers/azure.md](docs/cloud-providers/azure.md) | `terraform/azure/` | PostgreSQL Flexible · Azure Cache · ACR · Key Vault |
+| **Rancher (RKE2)** | [docs/cloud-providers/rancher.md](docs/cloud-providers/rancher.md) | `terraform/rancher/` | Fleet GitOps · Monitoring · Logging built-in |
 | **Generic K8s** | This README | — | Self-hosted Redis + Postgres |
 
-Each cloud provider has:
-- A Terraform module that provisions the cluster and all managed backing services
-- Helm value overrides in `k8s/cloud-overlays/<provider>/` that patch the base values for cloud-specific annotations and managed service endpoints
-- A step-by-step guide with DNS, secret management, and GitHub Actions integration
+Each cloud provider includes Terraform that provisions the cluster and all managed backing services,
+Helm value overrides in `k8s/cloud-overlays/<provider>/` for cloud-specific annotations and endpoints,
+and a step-by-step guide covering DNS, secret management, and GitHub Actions OIDC (no static keys).
+
+## CI/CD Pipelines — Segregated by Concern
+
+Three independent workflows, each triggered only by relevant file changes:
+
+| Pipeline | File | Triggers | Responsibility |
+|----------|------|----------|----------------|
+| **Security** | `security.yaml` | All pushes + nightly cron | Secret detection (Gitleaks), IaC scan (Trivy), OPA policies, CIS benchmarks (Checkov), SBOM, image scan |
+| **Infrastructure** | `infrastructure.yaml` | `k8s/kong/`, `k8s/dapr/`, `k8s/keycloak/`, `terraform/`, etc. | Validate manifests, Terraform plan (PR), deploy cert-manager/Kong/Dapr/Keycloak/OpenSearch (dev auto, prod manual) |
+| **Applications** | `applications.yaml` | `k8s/apps/`, `src/`, `Dockerfile` | Build & push image, Trivy image scan (block on CRITICAL), deploy via Kustomize overlay, rollback on failure |
 
 ## Directory Structure
 
 ```
 .
 ├── docs/
-│   ├── diagrams.md             # Mermaid architecture diagrams
+│   ├── diagrams.md             # Mermaid diagrams (8 diagrams)
 │   ├── architecture.md         # Narrative architecture and design decisions
+│   ├── observability.md        # OpenSearch setup, Fluentbit, index strategy, Dapr binding
 │   ├── runbook.md              # Ops runbook: scaling, secret rotation, break-glass
 │   └── cloud-providers/
-│       ├── gcp.md              # GKE setup guide (step-by-step)
-│       ├── aws.md              # EKS setup guide (step-by-step)
-│       └── rancher.md          # Rancher + RKE2 + Fleet guide
+│       ├── gcp.md              # GKE guide: Autopilot, Cloud SQL, Memorystore, WI Federation
+│       ├── aws.md              # EKS guide: IRSA, RDS, ElastiCache, ESO, NLB
+│       ├── azure.md            # AKS guide: Workload Identity, Key Vault CSI, PostgreSQL Flexible
+│       └── rancher.md          # Rancher + RKE2 + Fleet GitOps guide
 ├── terraform/
 │   ├── gcp/                    # GKE + Cloud SQL + Memorystore + Artifact Registry
-│   ├── aws/                    # EKS + RDS + ElastiCache + ECR
+│   ├── aws/                    # EKS + RDS + ElastiCache + ECR + Secrets Manager
+│   ├── azure/                  # AKS + PostgreSQL Flexible + Azure Cache + ACR + Key Vault
 │   └── rancher/                # Rancher cluster + Fleet + Monitoring
 ├── k8s/
 │   ├── namespaces/             # All namespace definitions
@@ -73,16 +91,25 @@ Each cloud provider has:
 │   │   └── overlays/
 │   │       ├── dev/            # 1 replica, smaller resources, dev image tag
 │   │       └── prod/           # 3 replicas, production resources, pinned image
+│   ├── opensearch/
+│   │   ├── helm-values.yaml    # OpenSearch 3-node cluster
+│   │   ├── dashboards-values.yaml  # Dashboards + Keycloak OIDC + Kong ingress
+│   │   ├── index-policies.yaml # ISM: platform-logs (30d), security-events (90d)
+│   │   ├── dapr-binding.yaml   # Dapr output binding for app audit events
+│   │   └── namespace.yaml
+│   ├── logging/
+│   │   └── fluentbit-values.yaml  # DaemonSet: collect → enrich → route to OpenSearch
 │   └── cloud-overlays/
-│       ├── gcp/                # GKE-specific: Cloud SQL, Memorystore, NLB annotations
-│       ├── aws/                # EKS-specific: RDS, ElastiCache, NLB + IRSA
+│       ├── gcp/                # GKE: Cloud SQL, Memorystore TLS, NEG annotations
+│       ├── aws/                # EKS: RDS, ElastiCache TLS, NLB + IRSA
+│       ├── azure/              # AKS: PostgreSQL Flexible, Azure Cache TLS, Key Vault CSI
 │       └── rancher/            # Rancher: Fleet bundle, Prometheus ServiceMonitor
 ├── policies/
-│   └── deployments.rego        # OPA policies: resource limits, no :latest, runAsNonRoot
+│   └── deployments.rego        # OPA: resource limits, no :latest, runAsNonRoot, TLS
 ├── .github/workflows/
-│   ├── ci.yaml                 # Lint → Kustomize validate → OPA → Trivy → build
-│   ├── deploy-dev.yaml         # Auto-deploy on master push
-│   └── deploy-prod.yaml        # Manual + confirmation + required reviewer
+│   ├── security.yaml           # Gitleaks · Trivy IaC · OPA · Checkov · SBOM (all pushes)
+│   ├── infrastructure.yaml     # Validate · Terraform plan · Deploy infra (path-filtered)
+│   └── applications.yaml       # Build · Image scan · Deploy app · Rollback (path-filtered)
 └── scripts/
     ├── install.sh              # Full bootstrap (--dry-run, --skip-infra, --skip-apps)
     └── teardown.sh             # Clean uninstall
@@ -175,24 +202,27 @@ terraform apply
 
 ## GitHub Actions
 
-| Workflow | Trigger | What it does |
-|----------|---------|--------------|
-| `ci.yaml` | Every push / PR | Lint, Kustomize validate, OPA policies, Trivy/Checkov scan, image build |
-| `deploy-dev.yaml` | Push to `master` | Full infra + app deploy to dev cluster |
-| `deploy-prod.yaml` | Manual (`workflow_dispatch`) | Confirmation string + required reviewer gate + rollback on failure |
+Three pipelines with independent triggers — infra changes never re-deploy apps and vice versa.
+
+| Pipeline | Trigger | Responsibility |
+|----------|---------|----------------|
+| `security.yaml` | All pushes + nightly 02:00 UTC | Gitleaks, Trivy IaC (SARIF), OPA/Conftest, Checkov CIS, SBOM (Syft+Grype), nightly image scan |
+| `infrastructure.yaml` | Push/PR on `k8s/kong/`, `k8s/dapr/`, `k8s/keycloak/`, `terraform/`, etc. | kubeconform validate, Helm dry-run, Terraform plan (PR), deploy cert-manager/Kong/Dapr/Keycloak/OpenSearch/Fluentbit |
+| `applications.yaml` | Push/PR on `k8s/apps/`, `src/`, `Dockerfile` | Build + push image (GHCR), Trivy image scan (block CRITICAL), Kustomize overlay deploy, auto-rollback |
 
 ### Required GitHub Secrets
 
-| Secret | Description |
-|--------|-------------|
-| `DEV_KUBECONFIG` | base64-encoded kubeconfig for dev cluster |
-| `PROD_KUBECONFIG` | base64-encoded kubeconfig for prod cluster |
+| Secret | Used by | Description |
+|--------|---------|-------------|
+| `DEV_KUBECONFIG` | infra + apps | base64-encoded kubeconfig for dev cluster |
+| `PROD_KUBECONFIG` | infra + apps | base64-encoded kubeconfig for prod cluster |
+| `OPENSEARCH_ADMIN_PASSWORD` | infrastructure | OpenSearch cluster health check |
 
 ### Required GitHub Environments
 
 Settings → Environments:
-- `dev` — no required reviewers
-- `prod` — add 1+ required reviewer(s)
+- `dev` — no required reviewers (auto-deploys on push to `master`)
+- `prod` — add 1+ required reviewer(s); applies to both infra and app pipelines
 
 ## Security Notes
 
@@ -207,8 +237,10 @@ Settings → Environments:
 ## Further Reading
 
 - [Architecture & Design Decisions](docs/architecture.md)
+- [Architecture Diagrams](docs/diagrams.md) — 8 Mermaid diagrams
+- [Observability — OpenSearch & Logging](docs/observability.md)
 - [Operator Runbook](docs/runbook.md)
-- [Architecture Diagrams](docs/diagrams.md)
 - [GKE Setup Guide](docs/cloud-providers/gcp.md)
 - [EKS Setup Guide](docs/cloud-providers/aws.md)
+- [AKS Setup Guide](docs/cloud-providers/azure.md)
 - [Rancher / RKE2 Guide](docs/cloud-providers/rancher.md)

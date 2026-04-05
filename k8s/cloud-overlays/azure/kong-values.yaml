@@ -1,0 +1,27 @@
+# AKS-specific Kong Helm value overrides
+# Usage: helm upgrade --install kong kong/ingress -n kong \
+#          -f k8s/kong/helm-values.yaml \
+#          -f k8s/cloud-overlays/azure/kong-values.yaml
+
+proxy:
+  annotations:
+    # Azure Standard Load Balancer (internal or external)
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/status"
+    # Uncomment for internal LB (private, VNet-only):
+    # service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+
+# Azure CNI: pods get VNet IPs — no special settings needed for topology spread
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app: kong-kong
+
+# Workload Identity: Kong SA annotation (if Kong needs Key Vault access)
+podAnnotations:
+  azure.workload.identity/use: "false"  # set to "true" if needed
+
+serviceMonitor:
+  enabled: true  # for Azure Monitor / Prometheus integration

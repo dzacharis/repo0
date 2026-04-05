@@ -1,0 +1,38 @@
+# AKS-specific Keycloak Helm value overrides
+# Uses Azure Database for PostgreSQL Flexible Server
+
+postgresql:
+  enabled: false
+
+externalDatabase:
+  host: ""        # Set to: terraform output postgres_fqdn
+  port: 5432
+  database: keycloak
+  user: keycloak
+  existingSecret: keycloak-postgresql-secret
+  existingSecretPasswordKey: password
+
+extraEnvVars:
+  - name: KC_PROXY
+    value: edge
+  - name: KC_HOSTNAME_STRICT
+    value: "false"
+  - name: KC_HOSTNAME_STRICT_HTTPS
+    value: "false"
+  - name: KEYCLOAK_EXTRA_ARGS
+    value: "--import-realm"
+  # Azure PostgreSQL requires SSL
+  - name: KC_DB_URL_PROPERTIES
+    value: "?sslmode=require"
+
+# Workload Identity annotation (if Keycloak needs Key Vault access directly)
+podAnnotations:
+  azure.workload.identity/use: "false"
+
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: keycloak

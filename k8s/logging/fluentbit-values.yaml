@@ -1,0 +1,153 @@
+# Fluentbit DaemonSet — collects logs from all pods and ships to OpenSearch
+# Chart: fluent/fluent-bit (https://fluent.github.io/helm-charts)
+# Replaces cloud-specific logging agents when using self-managed clusters
+
+image:
+  repository: cr.fluentbit.io/fluent/fluent-bit
+  tag: "3.1"
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+  - operator: Exists   # run on every node
+
+config:
+  service: |
+    [SERVICE]
+        Daemon          Off
+        Log_Level       info
+        Parsers_File    /fluent-bit/etc/parsers.conf
+        HTTP_Server     On
+        HTTP_Listen     0.0.0.0
+        HTTP_Port       2020
+        Health_Check    On
+
+  inputs: |
+    [INPUT]
+        Name              tail
+        Path              /var/log/containers/*.log
+        multiline.parser  docker, cri
+        Tag               kube.*
+        Mem_Buf_Limit     10MB
+        Skip_Long_Lines   On
+        Refresh_Interval  10
+
+  filters: |
+    # Enrich with Kubernetes metadata
+    [FILTER]
+        Name                kubernetes
+        Match               kube.*
+        Kube_URL            https://kubernetes.default.svc:443
+        Kube_CA_File        /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        Kube_Token_File     /var/run/secrets/kubernetes.io/serviceaccount/token
+        Kube_Tag_Prefix     kube.var.log.containers.
+        Merge_Log           On
+        Merge_Log_Key       log_processed
+        K8S-Logging.Parser  On
+        K8S-Logging.Exclude Off
+        Annotations         Off
+        Labels              On
+
+    # Parse JSON logs from Dapr sidecar
+    [FILTER]
+        Name    parser
+        Match   kube.*daprd*
+        Key_Name log
+        Parser  json
+
+    # Add stream classification for routing
+    [FILTER]
+        Name    record_modifier
+        Match   kube.*
+        Record  cluster ${CLUSTER_NAME}
+        Record  environment ${ENVIRONMENT}
+
+    # Dedicate security-related namespaces to security index
+    [FILTER]
+        Name    rewrite_tag
+        Match   kube.*
+        Rule    $kubernetes['namespace_name'] ^(keycloak|cert-manager)$ security-events.$TAG false
+
+  outputs: |
+    # Application logs → OpenSearch platform-logs-* index
+    [OUTPUT]
+        Name            opensearch
+        Match           kube.*
+        Host            opensearch-cluster-master.opensearch.svc.cluster.local
+        Port            9200
+        HTTP_User       fluentbit
+        HTTP_Passwd     ${OPENSEARCH_PASSWORD}
+        Index           platform-logs
+        Logstash_Format On
+        Logstash_Prefix platform-logs
+        tls             On
+        tls.verify      Off
+        Suppress_Type_Name On
+        Retry_Limit     5
+
+    # Security / audit logs → separate index with longer retention
+    [OUTPUT]
+        Name            opensearch
+        Match           security-events.*
+        Host            opensearch-cluster-master.opensearch.svc.cluster.local
+        Port            9200
+        HTTP_User       fluentbit
+        HTTP_Passwd     ${OPENSEARCH_PASSWORD}
+        Index           security-events
+        Logstash_Format On
+        Logstash_Prefix security-events
+        tls             On
+        tls.verify      Off
+        Suppress_Type_Name On
+        Retry_Limit     5
+
+  customParsers: |
+    [PARSER]
+        Name        json
+        Format      json
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+
+    [PARSER]
+        Name        kong-access
+        Format      json
+        Time_Key    started_at
+
+daemonSetVolumes:
+  - name: varlog
+    hostPath:
+      path: /var/log
+  - name: varlibdockercontainers
+    hostPath:
+      path: /var/lib/docker/containers
+
+daemonSetVolumeMounts:
+  - name: varlog
+    mountPath: /var/log
+  - name: varlibdockercontainers
+    mountPath: /var/lib/docker/containers
+    readOnly: true
+
+env:
+  - name: OPENSEARCH_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: opensearch-secret
+        key: fluentbit-password
+  - name: CLUSTER_NAME
+    value: "platform-cluster"   # Override per environment
+  - name: ENVIRONMENT
+    value: "prod"               # Override per environment
+
+serviceMonitor:
+  enabled: false   # set true when Prometheus is available

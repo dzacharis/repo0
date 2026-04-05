@@ -143,47 +143,80 @@ graph LR
 
 ---
 
-## 4. CI/CD Pipeline
+## 4. CI/CD Pipelines (Segregated)
+
+Three independent pipelines, each with a single responsibility and its own trigger filters.
 
 ```mermaid
 flowchart TD
-    Dev["👩‍💻 Developer\npushes code"] --> PR["Pull Request"]
+    Dev["👩‍💻 Developer\npushes code"] --> PR["Pull Request / Push"]
 
-    subgraph CI["CI Workflow (ci.yaml) — runs on every push/PR"]
-        Lint["📋 Lint\nkubeval / yamllint\nHelm dry-run"]
-        Kustomize["🗂️ Kustomize\nkubeconform validate\ndev + prod overlays"]
-        OPA["🛡️ OPA / Conftest\nresource limits\nno :latest tags\nrunAsNonRoot\nTLS required"]
-        Trivy["🔍 Security Scan\nTrivy IaC (SARIF)\nCheckov policies"]
-        Build["🐳 Build & Push\nDocker image\n→ GHCR\n(master branch only)"]
-        ImageScan["🔍 Image Scan\nTrivy container scan\nfail on CRITICAL"]
+    PR --> SecTrig{"security.yaml\ntrigger\n(all pushes +\nnightly cron)"}
+    PR --> InfraTrig{"infrastructure.yaml\ntrigger\n(infra paths only)"}
+    PR --> AppTrig{"applications.yaml\ntrigger\n(app paths only)"}
 
-        Lint --> Kustomize --> OPA --> Trivy --> Build --> ImageScan
+    subgraph SecPipeline["🔐 security.yaml"]
+        S1["🔑 Gitleaks\nSecret Detection"]
+        S2["🔍 Trivy IaC\nK8s + Terraform\n→ SARIF"]
+        S3["🛡️ OPA/Conftest\nResource limits\nNo :latest\nrunAsNonRoot"]
+        S4["📋 Checkov\nCIS Benchmarks\nK8s + Terraform"]
+        S5["📦 Syft + Grype\nSBOM + vuln scan\n(master only)"]
+        S6["🐳 Image Scan\nTrivy container\n(nightly)"]
+        S1 --- S2 --- S3 --- S4
+        S4 --- S5
+        S6
     end
 
-    subgraph DeployDev["Deploy Dev (deploy-dev.yaml) — auto on master merge"]
-        DevInfra["🏗️ Infrastructure\ncert-manager → Kong\n→ Dapr → Keycloak"]
-        DevApps["🚀 Applications\nkubectl apply\n(dev overlay)"]
-        DevSmoke["✅ Smoke Tests\nhealth endpoint\ncurl through Kong"]
-
-        DevInfra --> DevApps --> DevSmoke
+    subgraph InfraPipeline["🏗️ infrastructure.yaml"]
+        I1["✅ Validate\nkubeconform\nHelm dry-run"]
+        I2["📐 Terraform Plan\n(PR only, all providers)"]
+        I3["🚀 Deploy Dev\ncert-manager→Redis\n→Kong→Dapr\n→Keycloak→OpenSearch"]
+        I4["👤 Reviewer Gate\n(prod only)"]
+        I5["🚀 Deploy Prod\nHA mode\n3 replicas"]
+        I6["🩺 Infra Smoke Test\ncluster health\nOpenSearch health"]
+        I1 --> I2
+        I1 --> I3 --> I6
+        I1 --> I4 --> I5 --> I6
     end
 
-    subgraph DeployProd["Deploy Prod (deploy-prod.yaml) — manual + approval"]
-        Approval["👤 Required Reviewer\nGitHub Environment\nprotection rule"]
-        Confirm["🔒 Confirm string\n'deploy-prod'"]
-        ProdInfra["🏗️ Infrastructure\nHA mode (3 replicas)"]
-        ProdApps["🚀 Applications\nkustomize edit image\n(prod overlay)"]
-        ProdSmoke["✅ Extended Tests\nOIDC flow\nDapr pub/sub roundtrip"]
-        Rollback["⏪ Auto-Rollback\non failure"]
-
-        Approval --> Confirm --> ProdInfra --> ProdApps --> ProdSmoke
-        ProdApps -->|failure| Rollback
+    subgraph AppPipeline["🚀 applications.yaml"]
+        A1["✅ Validate\nApp manifests\nKustomize overlays"]
+        A2["🧪 Unit Tests\n(your test runner)"]
+        A3["🐳 Build & Push\nGHCR / ACR / ECR\nSLSA provenance\nSBOM attach"]
+        A4["🔍 Image Scan\nTrivy CRITICAL\n→ block on fail"]
+        A5["🚀 Deploy Dev\nkustomize edit image\nkubectl apply\n→ smoke test"]
+        A6["👤 Reviewer Gate\n(prod)"]
+        A7["🚀 Deploy Prod\nkustomize edit image\nkubectl apply\n→ extended test"]
+        A8["⏪ Auto-Rollback\non failure"]
+        A1 --> A2 --> A3 --> A4 --> A5
+        A4 --> A6 --> A7
+        A7 -->|failure| A8
     end
 
-    PR --> CI
-    CI -->|merge to master| DeployDev
-    DeployDev -->|tag vX.Y.Z| DeployProd
+    SecTrig --> SecPipeline
+    InfraTrig --> InfraPipeline
+    AppTrig --> AppPipeline
 ```
+
+### Pipeline responsibility matrix
+
+| Concern | security.yaml | infrastructure.yaml | applications.yaml |
+|---------|:---:|:---:|:---:|
+| Secret / credential leak detection | ✅ | | |
+| IaC misconfiguration scan | ✅ | | |
+| OPA policy enforcement | ✅ | | |
+| CIS benchmark checks | ✅ | | |
+| SBOM generation | ✅ | | |
+| Manifest validation (infra) | | ✅ | |
+| Terraform plan / validate | | ✅ | |
+| Helm chart deployments | | ✅ | |
+| Kong / Dapr / Keycloak deploy | | ✅ | |
+| OpenSearch / Fluentbit deploy | | ✅ | |
+| App manifest validation | | | ✅ |
+| Container image build & push | | | ✅ |
+| Container vulnerability scan | | | ✅ |
+| App deployment (Kustomize) | | | ✅ |
+| Rollback on failure | | | ✅ |
 
 ---
 
@@ -337,4 +370,83 @@ graph LR
     style keycloak-ns fill:#f8d7da
     style redis-ns fill:#ffe5e5
     style cert-ns fill:#e2e3e5
+```
+
+---
+
+## 7. Azure (AKS) Topology
+
+```mermaid
+graph TB
+    subgraph Azure["Microsoft Azure"]
+        subgraph RG["Resource Group: platform-rg"]
+            subgraph VNET["Virtual Network (Azure CNI)"]
+                subgraph AKS["AKS Cluster\n(Workload Identity + Defender)"]
+                    direction TB
+                    Kong5["Kong\n(Azure Standard LB)"]
+                    Apps5["Apps + Dapr\n(Workload Identity)"]
+                    KC5["Keycloak"]
+                end
+
+                subgraph ManagedSvcs3["Managed Services"]
+                    PG[("Azure Database\nfor PostgreSQL\nFlexible Server\n(Keycloak DB)")]
+                    Redis2[("Azure Cache\nfor Redis\nTLS :6380\n(Dapr State/PubSub)")]
+                    ACR["Azure Container\nRegistry (ACR)"]
+                end
+
+                ALB["Azure Standard\nLoad Balancer"]
+            end
+        end
+
+        KV["Azure Key Vault\n(CSI Secrets Provider)"]
+        LA["Log Analytics\nWorkspace\n(AKS Monitor +\nDefender)"]
+        DNS2["Azure DNS Zone"]
+        WI["Azure Workload\nIdentity\n(no SPN secrets)"]
+    end
+
+    Internet3(("🌐")) --> DNS2 --> ALB --> Kong5
+    Kong5 --> Apps5
+    KC5 --- PG
+    Apps5 -->|Dapr TLS| Redis2
+    KV -.->|CSI mount| AKS
+    LA -.->|OMS agent| AKS
+    WI -.->|federated| AKS
+```
+
+---
+
+## 8. Observability — Log Flow (OpenSearch)
+
+```mermaid
+flowchart LR
+    subgraph Sources["Log Sources"]
+        KongLog["Kong\nHTTP Log plugin\n→ Fluentbit HTTP"]
+        AppLog["App Containers\n/var/log/containers\n(structured JSON)"]
+        DaprLog["Dapr Sidecar\n(JSON)"]
+        KCLog["Keycloak\naudit events"]
+        DaprBind["App\n(Dapr binding\naudit events)"]
+    end
+
+    subgraph Collector["Namespace: logging"]
+        FB2["Fluentbit DaemonSet\n─────────────────\nkubernetes filter\nrewrite_tag (security)\nJSON parser"]
+    end
+
+    subgraph OS["Namespace: opensearch"]
+        OSNode["OpenSearch\n3-node cluster\nISM lifecycle policies"]
+        OSDash["OpenSearch Dashboards\n(OIDC via Keycloak)"]
+    end
+
+    subgraph Indices2["Index Strategy"]
+        PI["platform-logs-*\n30-day retention\n(hot→warm→delete)"]
+        SI["security-events-*\n90-day retention\n(keycloak, cert-manager)"]
+        AI["platform-audit\n(Dapr binding output)"]
+    end
+
+    KongLog & AppLog & DaprLog --> FB2
+    KCLog --> FB2
+    FB2 -->|app logs| PI
+    FB2 -->|"security ns\n(rewrite_tag)"| SI
+    DaprBind -->|POST /v1.0/bindings/opensearch-audit| AI
+    PI & SI & AI --> OSNode
+    OSNode --> OSDash
 ```

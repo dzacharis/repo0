@@ -1,0 +1,384 @@
+name: "Infrastructure"
+
+# Deploys cert-manager, Kong, Dapr, Keycloak, OpenSearch, and Redis.
+# Triggered only when infrastructure files change — never on app-only changes.
+# Plan runs on PR; apply runs on merge to master; prod requires manual approval.
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - "k8s/namespaces/**"
+      - "k8s/kong/**"
+      - "k8s/dapr/**"
+      - "k8s/keycloak/**"
+      - "k8s/cert-manager/**"
+      - "k8s/opensearch/**"
+      - "k8s/logging/**"
+      - "k8s/cloud-overlays/**"
+      - "k8s/kustomize/**"
+      - "terraform/**"
+      - "helm/**"
+  pull_request:
+    branches: [master, main]
+    paths:
+      - "k8s/namespaces/**"
+      - "k8s/kong/**"
+      - "k8s/dapr/**"
+      - "k8s/keycloak/**"
+      - "k8s/cert-manager/**"
+      - "k8s/opensearch/**"
+      - "k8s/logging/**"
+      - "k8s/cloud-overlays/**"
+      - "k8s/kustomize/**"
+      - "terraform/**"
+      - "helm/**"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: dev
+        type: choice
+        options: [dev, prod]
+      component:
+        description: "Component to deploy (all, kong, dapr, keycloak, opensearch)"
+        required: false
+        default: all
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write   # for posting Terraform plan as PR comment
+
+concurrency:
+  group: infra-${{ github.ref }}
+  cancel-in-progress: false   # never cancel an in-flight infra deploy
+
+# ── Reusable helm-install step via composite or inline ───────────────────────
+
+jobs:
+  # ── 1. Validate manifests ───────────────────────────────────────────────────
+  validate:
+    name: Validate Infrastructure Manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubeconform
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
+            | tar xz && sudo mv kubeconform /usr/local/bin
+
+      - name: Validate infra manifests
+        run: |
+          find k8s/namespaces k8s/cert-manager k8s/kong/plugins \
+               k8s/dapr k8s/keycloak k8s/opensearch \
+               -name "*.yaml" ! -name "*helm-values*" ! -name "*secrets*" \
+            | xargs kubeconform --ignore-missing-schemas --strict -
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Add Helm repos & dry-run
+        run: |
+          helm repo add kong       https://charts.konghq.com
+          helm repo add dapr       https://dapr.github.io/helm-charts
+          helm repo add bitnami    https://charts.bitnami.com/bitnami
+          helm repo add jetstack   https://charts.jetstack.io
+          helm repo add opensearch https://opensearch-project.github.io/helm-charts
+          helm repo add fluent     https://fluent.github.io/helm-charts
+          helm repo update
+
+          helm template cert-manager jetstack/cert-manager \
+            -f k8s/cert-manager/helm-values.yaml > /dev/null
+          helm template kong kong/ingress \
+            -f k8s/kong/helm-values.yaml \
+            --set ingressController.installCRDs=false > /dev/null
+          helm template dapr dapr/dapr \
+            -f k8s/dapr/helm-values.yaml > /dev/null
+          helm template keycloak bitnami/keycloak \
+            -f k8s/keycloak/helm-values.yaml > /dev/null
+          helm template opensearch opensearch/opensearch \
+            -f k8s/opensearch/helm-values.yaml > /dev/null
+
+  # ── 2. Terraform Plan (PR only) ─────────────────────────────────────────────
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    strategy:
+      matrix:
+        provider: [gcp, aws, azure]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: Terraform Init
+        run: terraform -chdir=terraform/${{ matrix.provider }} init -backend=false
+
+      - name: Terraform Validate
+        run: terraform -chdir=terraform/${{ matrix.provider }} validate
+
+      - name: Terraform Plan (dry run, no credentials)
+        run: |
+          cd terraform/${{ matrix.provider }}
+          # Create a dummy tfvars so validate doesn't complain about missing required vars
+          echo 'project_id = "dry-run"'         > ci.auto.tfvars 2>/dev/null || true
+          echo 'resource_group_name = "dry-run"' >> ci.auto.tfvars 2>/dev/null || true
+          echo 'rancher_api_url = "https://x"'   >> ci.auto.tfvars 2>/dev/null || true
+          echo 'rancher_token = "x"'             >> ci.auto.tfvars 2>/dev/null || true
+          terraform plan -input=false 2>&1 | head -60 || true
+
+  # ── 3. Deploy Infrastructure — Dev ─────────────────────────────────────────
+  deploy-infra-dev:
+    name: Deploy Infrastructure (dev)
+    runs-on: ubuntu-latest
+    needs: [validate]
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev')
+    environment: dev
+    env:
+      COMPONENT: ${{ github.event.inputs.component || 'all' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.DEV_KUBECONFIG }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Add Helm repos
+        run: |
+          helm repo add kong       https://charts.konghq.com
+          helm repo add dapr       https://dapr.github.io/helm-charts
+          helm repo add bitnami    https://charts.bitnami.com/bitnami
+          helm repo add jetstack   https://charts.jetstack.io
+          helm repo add opensearch https://opensearch-project.github.io/helm-charts
+          helm repo add fluent     https://fluent.github.io/helm-charts
+          helm repo update
+
+      - name: Apply namespaces
+        if: env.COMPONENT == 'all'
+        run: |
+          kubectl apply -f k8s/namespaces/namespaces.yaml
+          kubectl apply -f k8s/opensearch/namespace.yaml
+
+      - name: Deploy cert-manager
+        if: env.COMPONENT == 'all'
+        run: |
+          helm upgrade --install cert-manager jetstack/cert-manager \
+            --namespace cert-manager \
+            --values k8s/cert-manager/helm-values.yaml \
+            --wait --timeout 5m
+          kubectl apply -f k8s/cert-manager/cluster-issuer.yaml
+
+      - name: Deploy Redis
+        if: env.COMPONENT == 'all'
+        run: |
+          helm upgrade --install redis bitnami/redis \
+            --namespace redis --create-namespace \
+            --set auth.existingSecret=redis-secret \
+            --set auth.existingSecretPasswordKey=redis-password \
+            --wait --timeout 5m
+
+      - name: Deploy Kong
+        if: env.COMPONENT == 'all' || env.COMPONENT == 'kong'
+        run: |
+          helm upgrade --install kong kong/ingress \
+            --namespace kong \
+            --values k8s/kong/helm-values.yaml \
+            --wait --timeout 5m
+          kubectl apply -f k8s/kong/plugins/
+
+      - name: Deploy Dapr
+        if: env.COMPONENT == 'all' || env.COMPONENT == 'dapr'
+        run: |
+          helm upgrade --install dapr dapr/dapr \
+            --namespace dapr-system \
+            --values k8s/dapr/helm-values.yaml \
+            --wait --timeout 10m
+          kubectl apply -f k8s/dapr/dapr-configuration.yaml
+          kubectl apply -f k8s/dapr/components/
+
+      - name: Deploy Keycloak
+        if: env.COMPONENT == 'all' || env.COMPONENT == 'keycloak'
+        run: |
+          kubectl apply -f k8s/keycloak/realm-config.yaml
+          helm upgrade --install keycloak bitnami/keycloak \
+            --namespace keycloak \
+            --values k8s/keycloak/helm-values.yaml \
+            --wait --timeout 10m
+
+      - name: Deploy OpenSearch
+        if: env.COMPONENT == 'all' || env.COMPONENT == 'opensearch'
+        run: |
+          kubectl apply -f k8s/opensearch/index-policies.yaml
+          helm upgrade --install opensearch opensearch/opensearch \
+            --namespace opensearch \
+            --values k8s/opensearch/helm-values.yaml \
+            --wait --timeout 10m
+          helm upgrade --install opensearch-dashboards opensearch/opensearch-dashboards \
+            --namespace opensearch \
+            --values k8s/opensearch/dashboards-values.yaml \
+            --wait --timeout 5m
+
+      - name: Deploy Fluentbit
+        if: env.COMPONENT == 'all' || env.COMPONENT == 'opensearch'
+        run: |
+          helm upgrade --install fluent-bit fluent/fluent-bit \
+            --namespace logging --create-namespace \
+            --values k8s/logging/fluentbit-values.yaml \
+            --set env[0].value=platform-cluster-dev \
+            --set env[1].value=dev \
+            --wait --timeout 5m
+
+      - name: Infrastructure smoke test
+        run: |
+          echo "=== Kong proxy ==="
+          kubectl get svc -n kong kong-kong-proxy
+          echo "=== Dapr control plane ==="
+          kubectl get pods -n dapr-system
+          echo "=== Keycloak ==="
+          kubectl rollout status deployment/keycloak -n keycloak --timeout=2m
+          echo "=== OpenSearch ==="
+          kubectl get pods -n opensearch
+
+  # ── 4. Deploy Infrastructure — Prod ─────────────────────────────────────────
+  deploy-infra-prod:
+    name: Deploy Infrastructure (prod)
+    runs-on: ubuntu-latest
+    needs: [validate]
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.environment == 'prod'
+    environment: prod   # enforces required reviewer gate
+    env:
+      COMPONENT: ${{ github.event.inputs.component || 'all' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.PROD_KUBECONFIG }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Add Helm repos
+        run: |
+          helm repo add kong       https://charts.konghq.com
+          helm repo add dapr       https://dapr.github.io/helm-charts
+          helm repo add bitnami    https://charts.bitnami.com/bitnami
+          helm repo add jetstack   https://charts.jetstack.io
+          helm repo add opensearch https://opensearch-project.github.io/helm-charts
+          helm repo add fluent     https://fluent.github.io/helm-charts
+          helm repo update
+
+      - name: Apply namespaces
+        if: env.COMPONENT == 'all'
+        run: |
+          kubectl apply -f k8s/namespaces/namespaces.yaml
+          kubectl apply -f k8s/opensearch/namespace.yaml
+
+      - name: Deploy cert-manager
+        if: env.COMPONENT == 'all'
+        run: |
+          helm upgrade --install cert-manager jetstack/cert-manager \
+            --namespace cert-manager \
+            --values k8s/cert-manager/helm-values.yaml \
+            --wait --timeout 5m
+          kubectl apply -f k8s/cert-manager/cluster-issuer.yaml
+
+      - name: Deploy Redis
+        if: env.COMPONENT == 'all'
+        run: |
+          helm upgrade --install redis bitnami/redis \
+            --namespace redis --create-namespace \
+            --set auth.existingSecret=redis-secret \
+            --set auth.existingSecretPasswordKey=redis-password \
+            --set architecture=replication \
+            --set sentinel.enabled=true \
+            --wait --timeout 5m
+
+      - name: Deploy Kong (HA)
+        if: env.COMPONENT == 'all' || env.COMPONENT == 'kong'
+        run: |
+          helm upgrade --install kong kong/ingress \
+            --namespace kong \
+            --values k8s/kong/helm-values.yaml \
+            --set replicaCount=3 \
+            --wait --timeout 5m
+          kubectl apply -f k8s/kong/plugins/
+
+      - name: Deploy Dapr (HA)
+        if: env.COMPONENT == 'all' || env.COMPONENT == 'dapr'
+        run: |
+          helm upgrade --install dapr dapr/dapr \
+            --namespace dapr-system \
+            --values k8s/dapr/helm-values.yaml \
+            --set global.ha.enabled=true \
+            --wait --timeout 10m
+          kubectl apply -f k8s/dapr/dapr-configuration.yaml
+          kubectl apply -f k8s/dapr/components/
+
+      - name: Deploy Keycloak (HA)
+        if: env.COMPONENT == 'all' || env.COMPONENT == 'keycloak'
+        run: |
+          kubectl apply -f k8s/keycloak/realm-config.yaml
+          helm upgrade --install keycloak bitnami/keycloak \
+            --namespace keycloak \
+            --values k8s/keycloak/helm-values.yaml \
+            --set replicaCount=3 \
+            --wait --timeout 10m
+
+      - name: Deploy OpenSearch (3-node)
+        if: env.COMPONENT == 'all' || env.COMPONENT == 'opensearch'
+        run: |
+          kubectl apply -f k8s/opensearch/index-policies.yaml
+          helm upgrade --install opensearch opensearch/opensearch \
+            --namespace opensearch \
+            --values k8s/opensearch/helm-values.yaml \
+            --set replicas=3 \
+            --wait --timeout 15m
+          helm upgrade --install opensearch-dashboards opensearch/opensearch-dashboards \
+            --namespace opensearch \
+            --values k8s/opensearch/dashboards-values.yaml \
+            --set replicaCount=2 \
+            --wait
+
+      - name: Deploy Fluentbit
+        if: env.COMPONENT == 'all' || env.COMPONENT == 'opensearch'
+        run: |
+          helm upgrade --install fluent-bit fluent/fluent-bit \
+            --namespace logging --create-namespace \
+            --values k8s/logging/fluentbit-values.yaml \
+            --set env[0].value=platform-cluster-prod \
+            --set env[1].value=prod \
+            --wait
+
+      - name: Infrastructure smoke test (prod)
+        run: |
+          echo "=== All control-plane pods ==="
+          kubectl get pods -n kong -n dapr-system -n keycloak -n opensearch 2>/dev/null || \
+            kubectl get pods --all-namespaces | grep -E "kong|dapr|keycloak|opensearch"
+          echo "=== OpenSearch cluster health ==="
+          kubectl exec -n opensearch opensearch-cluster-master-0 -- \
+            curl -sk -u admin:${{ secrets.OPENSEARCH_ADMIN_PASSWORD }} \
+            https://localhost:9200/_cluster/health?pretty || true
