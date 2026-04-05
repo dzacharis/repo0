@@ -1,0 +1,58 @@
+# Dapr Helm values
+# Chart: dapr/dapr (https://dapr.github.io/helm-charts)
+# Version: 1.13.x
+
+global:
+  ha:
+    enabled: true       # High-availability mode (3 replicas per control plane service)
+  mtls:
+    enabled: true       # mTLS between sidecars
+    workloadCertTTL: 24h
+    allowedClockSkew: 15m
+  logLevel: info
+  logAsJson: true
+  prometheus:
+    enabled: false      # Set to true if Prometheus is installed
+    port: 9090
+  rbac:
+    namespaced: false   # Set to true for namespace-scoped deployment
+
+dapr_operator:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 200Mi
+    limits:
+      cpu: 200m
+      memory: 400Mi
+
+dapr_sidecar_injector:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 100Mi
+    limits:
+      cpu: 200m
+      memory: 200Mi
+
+dapr_placement:
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 100m
+      memory: 100Mi
+    limits:
+      cpu: 200m
+      memory: 200Mi
+
+dapr_sentry:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 100Mi
+    limits:
+      cpu: 200m
+      memory: 200Mi

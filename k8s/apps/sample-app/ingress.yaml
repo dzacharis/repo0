@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sample-app
+  namespace: apps
+  annotations:
+    kubernetes.io/ingress.class: kong
+    # Apply Kong plugins
+    konghq.com/plugins: jwt-auth,rate-limiting-strict,cors-global
+    konghq.com/strip-path: "false"
+    konghq.com/preserve-host: "true"
+    konghq.com/https-redirect-status-code: "301"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: kong
+  tls:
+    - hosts:
+        - api.example.com
+      secretName: sample-app-tls
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          - path: /api/v1
+            pathType: Prefix
+            backend:
+              service:
+                name: sample-app
+                port:
+                  name: http

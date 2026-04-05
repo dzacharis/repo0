@@ -1,0 +1,45 @@
+# cert-manager Helm values
+# Chart: jetstack/cert-manager (https://charts.jetstack.io)
+# Version: v1.14.x
+
+installCRDs: true
+
+replicaCount: 2
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+webhook:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+cainjector:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+prometheus:
+  enabled: false  # Set to true if Prometheus is installed
+  servicemonitor:
+    enabled: false
+
+global:
+  logLevel: 2
+  leaderElection:
+    namespace: cert-manager

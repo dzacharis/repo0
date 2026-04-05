@@ -1,0 +1,29 @@
+apiVersion: configuration.konghq.com/v1
+kind: KongClusterPlugin
+metadata:
+  name: rate-limiting-global
+  annotations:
+    kubernetes.io/ingress.class: kong
+  labels:
+    global: "true"
+plugin: rate-limiting
+config:
+  minute: 100
+  hour: 5000
+  policy: local
+  fault_tolerant: true
+  hide_client_headers: false
+  redis_ssl: false
+  redis_ssl_verify: false
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: rate-limiting-strict
+  namespace: apps
+plugin: rate-limiting
+config:
+  minute: 20
+  hour: 500
+  policy: local
+  fault_tolerant: true

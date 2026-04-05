@@ -1,0 +1,108 @@
+# Keycloak Helm values
+# Chart: bitnami/keycloak (https://charts.bitnami.com/bitnami)
+# Version: 21.x
+
+auth:
+  adminUser: admin
+  existingSecret: keycloak-admin-secret
+  passwordSecretKey: admin-password
+
+replicaCount: 2
+
+image:
+  repository: bitnami/keycloak
+  tag: "24.0"
+  pullPolicy: IfNotPresent
+
+podDisruptionBudget:
+  create: true
+  maxUnavailable: 1
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+service:
+  type: ClusterIP
+  http:
+    enabled: true
+  ports:
+    http: 8080
+    https: 8443
+
+ingress:
+  enabled: true
+  ingressClassName: kong
+  annotations:
+    konghq.com/plugins: rate-limiting-strict
+    konghq.com/https-redirect-status-code: "301"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hostname: auth.example.com
+  path: /
+  pathType: Prefix
+  tls: true
+
+postgresql:
+  enabled: true
+  auth:
+    username: keycloak
+    database: keycloak
+    existingSecret: keycloak-postgresql-secret
+    secretKeys:
+      adminPasswordKey: postgres-password
+      userPasswordKey: password
+  primary:
+    persistence:
+      enabled: true
+      size: 8Gi
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+cache:
+  enabled: true
+  stackName: kubernetes
+  stackFile: ""
+
+logging:
+  output: default
+  level: INFO
+
+metrics:
+  enabled: false   # Set to true if Prometheus is installed
+  serviceMonitor:
+    enabled: false
+
+extraEnvVars:
+  - name: KC_PROXY
+    value: edge
+  - name: KC_HOSTNAME_STRICT
+    value: "false"
+  - name: KC_HOSTNAME_STRICT_HTTPS
+    value: "false"
+  - name: KEYCLOAK_EXTRA_ARGS
+    value: "--import-realm"
+
+extraVolumes:
+  - name: realm-config
+    configMap:
+      name: keycloak-realm-config
+
+extraVolumeMounts:
+  - name: realm-config
+    mountPath: /opt/bitnami/keycloak/data/import
+    readOnly: true
