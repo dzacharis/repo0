@@ -272,6 +272,13 @@ All docs live in [`docs/`](docs/) and are validated on every PR by the **`docs.y
 | Spell check | `cspell` | ⚠️ Warn only |
 | Doc coverage (code changed without docs) | Custom script | ⚠️ Warn only |
 
+## Onboarding
+
+| Role | Start here |
+|------|-----------|
+| **New business developer** (writes transforms) | [docs/onboarding-developer.md](docs/onboarding-developer.md) |
+| **New platform admin / maintainer** | [docs/onboarding-admin.md](docs/onboarding-admin.md) |
+
 ## Further Reading
 
 - [Architecture & Design Decisions](docs/architecture.md)
@@ -280,6 +287,7 @@ All docs live in [`docs/`](docs/) and are validated on every PR by the **`docs.y
 - [Maltego Transform Hub](docs/transform-hub.md)
 - [Observability — OpenSearch & Logging](docs/observability.md)
 - [Operator Runbook](docs/runbook.md)
+- [Bill of Materials](BILL-OF-MATERIALS.md)
 - [GKE Setup Guide](docs/cloud-providers/gcp.md)
 - [EKS Setup Guide](docs/cloud-providers/aws.md)
 - [AKS Setup Guide](docs/cloud-providers/azure.md)
