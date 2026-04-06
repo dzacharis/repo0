@@ -1,0 +1,158 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingestion-worker
+  namespace: ingestion
+  labels:
+    app: ingestion-worker
+    app.kubernetes.io/name: ingestion-worker
+    app.kubernetes.io/component: ingestion
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ingestion-worker
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: ingestion-worker
+        app.kubernetes.io/name: ingestion-worker
+      annotations:
+        # Dapr sidecar injection
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "ingestion-worker"
+        dapr.io/app-port: "8080"
+        dapr.io/log-level: "info"
+        dapr.io/enable-metrics: "true"
+        # Component scoping — this pod only gets entity-events component
+        dapr.io/config: "ingestion-dapr-config"
+    spec:
+      serviceAccountName: ingestion-worker
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ingestion-worker
+          image: ghcr.io/dzacharis/repo0/ingestion-worker:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: APP_PORT
+              value: "8080"
+            - name: DAPR_HTTP_PORT
+              value: "3500"
+            - name: PUBSUB_NAME
+              value: "entity-events"
+            - name: TOPIC_NAME
+              value: "entity-graph"
+            - name: OPENSEARCH_HOST
+              value: "opensearch-cluster-master.opensearch.svc.cluster.local"
+            - name: OPENSEARCH_PORT
+              value: "9200"
+            - name: OPENSEARCH_USERNAME
+              value: "admin"
+            - name: OPENSEARCH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ingestion-worker-secrets
+                  key: opensearch-password
+            - name: NEO4J_URI
+              value: "bolt://neo4j.neo4j.svc.cluster.local:7687"
+            - name: NEO4J_USERNAME
+              value: "neo4j"
+            - name: NEO4J_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ingestion-worker-secrets
+                  key: neo4j-password
+            - name: ENABLE_OPENSEARCH
+              value: "true"
+            - name: ENABLE_NEO4J
+              value: "true"
+            - name: MAX_CONCURRENT_EVENTS
+              value: "10"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: ingestion-worker
+---
+# Dedicated Dapr Configuration for the ingestion namespace
+# Enables tracing and restricts component access
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: ingestion-dapr-config
+  namespace: ingestion
+spec:
+  tracing:
+    samplingRate: "1"
+    zipkin:
+      endpointAddress: http://zipkin.dapr-system.svc.cluster.local:9411/api/v2/spans
+  metric:
+    enabled: true
+  mtls:
+    enabled: true
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ingestion-worker
+  namespace: ingestion
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ingestion-worker-pdb
+  namespace: ingestion
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: ingestion-worker

@@ -1,0 +1,40 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ingestion-worker
+  namespace: ingestion
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ingestion-worker
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    # Scale on CPU — pub/sub processing is CPU-bound for JSON parsing + HTTP writes
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    # Scale on memory — Neo4j driver keeps connection pools in memory
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30   # react quickly to event bursts
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: 300  # slow scale-down to avoid thrashing
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60

@@ -1,0 +1,63 @@
+# Dapr pub/sub component — entity-events
+#
+# Purpose
+# ───────
+# Dedicated pub/sub component for the entity ingestion pipeline.
+# Scoped to both the apps namespace (publishers: Transform Hub) and the
+# ingestion namespace (subscriber: ingestion-worker).
+#
+# Separation from the general "pubsub" component is intentional:
+#   - Different retention / dead-letter configuration
+#   - Scoped access enforced at the Dapr component level (not just NetworkPolicy)
+#   - Easier to swap the broker (e.g. to Kafka) for this specific flow
+#     without touching the general pub/sub used by other apps.
+
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: entity-events
+  # No namespace here — scoped via spec.scopes below
+spec:
+  type: pubsub.redis
+  version: v1
+  metadata:
+    - name: redisHost
+      value: redis-master.redis.svc.cluster.local:6379
+    - name: redisPassword
+      secretKeyRef:
+        name: redis-secret
+        key: redis-password
+    - name: enableTLS
+      value: "false"
+
+    # Reliability settings
+    - name: maxRetries
+      value: "5"
+    - name: maxRetryBackoff
+      value: 30s
+    - name: processingTimeout
+      value: 120s          # entity writes can take longer than general messages
+    - name: redeliveryDelay
+      value: 5s
+
+    # Dead-letter stream — failed events land here for inspection
+    - name: consumerID
+      value: ingestion-worker
+    - name: enableDLQ
+      value: "true"
+    - name: dlqTimeout
+      value: 5s
+
+    # Stream configuration
+    - name: streamMaxLen
+      value: "100000"      # keep last 100k events in the stream
+    - name: namespacePrefix
+      value: entity-events  # Redis key prefix
+
+  # Restrict this component to exactly these two app IDs
+  scopes:
+    - transform-hub     # publisher
+    - ingestion-worker  # subscriber
+
+auth:
+  secretStore: kubernetes

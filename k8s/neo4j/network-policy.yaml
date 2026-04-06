@@ -1,0 +1,66 @@
+# Network policy for the neo4j namespace.
+#
+# Security model
+# ──────────────
+# Neo4j is a private datastore. Only the ingestion-worker pods (ingestion namespace)
+# are allowed to open a Bolt connection (:7687). All other ingress is denied by default.
+# The neo4j browser UI (:7474) is accessible only for admin port-forwards — not exposed
+# through any Ingress or external load balancer.
+#
+# This ensures business code in the apps namespace can never write directly to the graph.
+# All graph writes flow: apps → Dapr pub/sub → ingestion → Neo4j
+
+---
+# Default deny all ingress to neo4j namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: neo4j
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+
+---
+# Allow Bolt (:7687) only from the ingestion namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-bolt-from-ingestion
+  namespace: neo4j
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: neo4j
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              network-zone: "ingestion"
+          podSelector:
+            matchLabels:
+              app: ingestion-worker
+      ports:
+        - protocol: TCP
+          port: 7687
+
+---
+# Allow Neo4j egress to DNS only (no external calls)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: neo4j-egress
+  namespace: neo4j
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

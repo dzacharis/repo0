@@ -1,0 +1,88 @@
+# Neo4j Helm values
+# Chart: neo4j/neo4j (https://helm.neo4j.com/neo4j)
+# Version: 5.x
+#
+# Provides: graph database (Bolt :7687, HTTP :7474)
+# Access: restricted by NetworkPolicy to ingestion namespace only
+
+neo4j:
+  name: neo4j
+  edition: community    # switch to "enterprise" with a license secret
+
+  # Admin password — injected from K8s secret
+  # kubectl create secret generic neo4j-auth --from-literal=NEO4J_AUTH=neo4j/<password> -n neo4j
+  passwordFromSecret: neo4j-auth
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+
+volumes:
+  data:
+    mode: defaultStorageClass
+    defaultStorageClass:
+      requests:
+        storage: 20Gi
+
+config:
+  # Allow only Bolt connections from inside the cluster
+  dbms.connector.bolt.enabled: "true"
+  dbms.connector.bolt.listen_address: "0.0.0.0:7687"
+  dbms.connector.http.enabled: "true"          # browser UI (admin only, behind NetworkPolicy)
+  dbms.connector.https.enabled: "false"        # TLS terminated at Kong/LB level
+
+  # Memory tuning (adjust to node size)
+  dbms.memory.heap.initial_size: "1g"
+  dbms.memory.heap.max_size: "2g"
+  dbms.memory.pagecache.size: "512m"
+
+  # Security
+  dbms.security.auth_enabled: "true"
+  dbms.security.procedures.unrestricted: "apoc.*"
+  dbms.security.procedures.allowlist: "apoc.*,gds.*"
+
+  # APOC plugin (utility procedures)
+  dbms.unmanaged_extension_classes: ""
+
+  # Logging
+  dbms.logs.query.enabled: "INFO"
+  dbms.logs.query.threshold: "1s"
+
+plugins:
+  # APOC core — required by ingestion worker for merge/upsert patterns
+  - name: apoc
+    version: "5"
+
+services:
+  neo4j:
+    # ClusterIP only — no external exposure; ingestion worker reaches via in-cluster DNS
+    type: ClusterIP
+    annotations: {}
+
+podSpec:
+  # Non-root
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 7474
+    runAsGroup: 7474
+    fsGroup: 7474
+
+  # Anti-affinity for multi-replica enterprise setups
+  podAntiAffinity: {}
+
+readinessProbe:
+  failureThreshold: 3
+  periodSeconds: 10
+  tcpSocket:
+    port: 7687
+
+livenessProbe:
+  failureThreshold: 10
+  initialDelaySeconds: 120
+  periodSeconds: 10
+  tcpSocket:
+    port: 7687

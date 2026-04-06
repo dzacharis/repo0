@@ -1,0 +1,172 @@
+# Network policy for the ingestion namespace.
+#
+# Security model
+# ──────────────
+# The ingestion worker is the ONLY component allowed to write to datastores.
+# It receives entity events via Dapr pub/sub (no direct inbound HTTP from apps).
+#
+# Allowed egress:
+#   → dapr-system  : pub/sub subscription, sidecar gRPC
+#   → opensearch   : port 9200 (REST API for entity indexing)
+#   → neo4j        : port 7687 (Bolt protocol for graph writes)
+#   → DNS (UDP/TCP 53)
+#
+# Inbound: only Dapr sidecar (localhost) and K8s health probes.
+
+---
+# Default deny all ingress from outside the pod
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: ingestion
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+
+---
+# Allow Dapr sidecar → app container on :8080 (pub/sub callback)
+# The sidecar runs in the same pod (localhost), but K8s NetworkPolicy
+# counts pod-level traffic — allow from within namespace for Dapr health.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dapr-sidecar-callback
+  namespace: ingestion
+spec:
+  podSelector:
+    matchLabels:
+      app: ingestion-worker
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}    # same namespace (Dapr sidecar in same pod)
+      ports:
+        - protocol: TCP
+          port: 8080         # ingestion worker HTTP
+
+---
+# Egress: DNS resolution
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-dns
+  namespace: ingestion
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# Egress: Dapr control plane (pub/sub, sidecar gRPC)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-dapr
+  namespace: ingestion
+spec:
+  podSelector:
+    matchLabels:
+      app: ingestion-worker
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: dapr-system
+      ports:
+        - protocol: TCP
+          port: 6500    # Dapr placement
+        - protocol: TCP
+          port: 80      # Dapr operator
+    # Dapr sidecar → Redis (pub/sub broker) in redis namespace
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+
+---
+# Egress: OpenSearch REST API
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-opensearch
+  namespace: ingestion
+spec:
+  podSelector:
+    matchLabels:
+      app: ingestion-worker
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              network-zone: "datastore"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: opensearch
+      ports:
+        - protocol: TCP
+          port: 9200
+
+---
+# Egress: Neo4j Bolt
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-neo4j
+  namespace: ingestion
+spec:
+  podSelector:
+    matchLabels:
+      app: ingestion-worker
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              network-zone: "datastore"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: neo4j
+      ports:
+        - protocol: TCP
+          port: 7687
+
+---
+# Egress: Keycloak (for token introspection if needed)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-keycloak
+  namespace: ingestion
+spec:
+  podSelector:
+    matchLabels:
+      app: ingestion-worker
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 8080
