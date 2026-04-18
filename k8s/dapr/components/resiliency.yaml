@@ -1,0 +1,45 @@
+apiVersion: dapr.io/v1alpha1
+kind: Resiliency
+metadata:
+  name: myresiliency
+  namespace: apps
+spec:
+  policies:
+    timeouts:
+      defaultTimeout: 10s
+      operationTimeout: 30s
+
+    retries:
+      defaultRetry:
+        policy: constant
+        duration: 500ms
+        maxRetries: 3
+      longRetry:
+        policy: exponential
+        maxInterval: 60s
+        maxRetries: 10
+
+    circuitBreakers:
+      defaultCircuitBreaker:
+        maxRequests: 1
+        interval: 10s
+        timeout: 30s
+        trip: consecutiveFailures >= 5
+
+  targets:
+    apps:
+      sample-app:
+        timeout: operationTimeout
+        retry: longRetry
+        circuitBreaker: defaultCircuitBreaker
+
+    components:
+      statestore:
+        outbound:
+          timeout: defaultTimeout
+          retry: defaultRetry
+          circuitBreaker: defaultCircuitBreaker
+      pubsub:
+        outbound:
+          timeout: defaultTimeout
+          retry: defaultRetry

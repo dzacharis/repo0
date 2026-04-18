@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: transform-hub
+  namespace: apps
+  labels:
+    app: transform-hub
+spec:
+  type: ClusterIP
+  selector:
+    app: transform-hub
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: transform-hub
+  namespace: apps
+  labels:
+    app: transform-hub

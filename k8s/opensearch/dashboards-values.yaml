@@ -1,0 +1,75 @@
+# OpenSearch Dashboards Helm values
+# Chart: opensearch/opensearch-dashboards
+# Version: 2.x
+
+replicaCount: 2
+
+image:
+  repository: opensearchproject/opensearch-dashboards
+  tag: "2.14.0"
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+config:
+  opensearch_dashboards.yml: |
+    server.name: opensearch-dashboards
+    server.host: "0.0.0.0"
+
+    # Point to OpenSearch cluster
+    opensearch.hosts: ["https://opensearch-cluster-master:9200"]
+    opensearch.ssl.verificationMode: certificate
+    opensearch.username: "kibanaserver"
+    opensearch.password: "${OPENSEARCH_DASHBOARDS_PASSWORD}"
+
+    # Session & security
+    opensearch_security.multitenancy.enabled: true
+    opensearch_security.multitenancy.tenants.preferred: ["Private", "Global"]
+    opensearch_security.readonly_mode.roles: ["kibana_read_only"]
+    opensearch_security.cookie.secure: true
+
+    # OIDC login via Keycloak
+    opensearch_security.auth.type: "openid"
+    opensearch_security.openid.connect_url: "https://auth.example.com/realms/myrealm/.well-known/openid-configuration"
+    opensearch_security.openid.client_id: "opensearch-dashboards"
+    opensearch_security.openid.client_secret: "${KEYCLOAK_OPENSEARCH_CLIENT_SECRET}"
+    opensearch_security.openid.base_redirect_url: "https://logs.example.com"
+    opensearch_security.openid.scope: "openid profile email"
+
+    # Disable telemetry
+    telemetry.enabled: false
+    telemetry.optIn: false
+
+ingress:
+  enabled: true
+  ingressClassName: kong
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    konghq.com/plugins: rate-limiting-strict,cors-global
+  hosts:
+    - host: logs.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: opensearch-dashboards-tls
+      hosts:
+        - logs.example.com
+
+extraEnvs:
+  - name: OPENSEARCH_DASHBOARDS_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: opensearch-dashboards-secret
+        key: password
+  - name: KEYCLOAK_OPENSEARCH_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: opensearch-dashboards-secret
+        key: keycloak-client-secret

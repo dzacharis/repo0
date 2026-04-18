@@ -1,0 +1,44 @@
+# AWS override: Dapr components using ElastiCache Redis (TLS + AUTH token)
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: statestore
+  namespace: apps
+spec:
+  type: state.redis
+  version: v1
+  metadata:
+    - name: redisHost
+      value: ""   # Set to: <redis_endpoint>:6379 (terraform output: redis_endpoint)
+    - name: redisPassword
+      secretKeyRef:
+        name: redis-secret
+        key: redis-password
+    - name: enableTLS
+      value: "true"   # ElastiCache has transit encryption enabled
+    - name: actorStateStore
+      value: "true"
+    - name: maxRetries
+      value: "3"
+auth:
+  secretStore: kubernetes
+---
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: pubsub
+  namespace: apps
+spec:
+  type: pubsub.redis
+  version: v1
+  metadata:
+    - name: redisHost
+      value: ""   # Set to: <redis_endpoint>:6379
+    - name: redisPassword
+      secretKeyRef:
+        name: redis-secret
+        key: redis-password
+    - name: enableTLS
+      value: "true"
+auth:
+  secretStore: kubernetes

@@ -1,0 +1,76 @@
+# Kong Ingress Controller Helm values
+# Chart: kong/ingress (https://charts.konghq.com)
+# Version: 0.4.x
+
+image:
+  repository: kong
+  tag: "3.6"
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+env:
+  database: "off"
+  router_flavor: expressions
+  nginx_worker_processes: "2"
+  proxy_access_log: /dev/stdout
+  admin_access_log: /dev/stdout
+  admin_gui_access_log: /dev/stdout
+  portal_api_access_log: /dev/stdout
+  proxy_error_log: /dev/stderr
+  admin_error_log: /dev/stderr
+  admin_gui_error_log: /dev/stderr
+  portal_api_error_log: /dev/stderr
+
+ingressController:
+  enabled: true
+  installCRDs: false
+  env:
+    kong_admin_tls_skip_verify: "true"
+
+proxy:
+  enabled: true
+  type: LoadBalancer
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+  http:
+    enabled: true
+    servicePort: 80
+    containerPort: 8000
+  tls:
+    enabled: true
+    servicePort: 443
+    containerPort: 8443
+  stream: {}
+
+admin:
+  enabled: true
+  http:
+    enabled: true
+    servicePort: 8001
+    containerPort: 8001
+  tls:
+    enabled: false
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+serviceMonitor:
+  enabled: false  # Set to true if Prometheus is installed
+
+secretVolumes: []

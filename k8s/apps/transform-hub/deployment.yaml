@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transform-hub
+  namespace: apps
+  labels:
+    app: transform-hub
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: transform-hub
+  template:
+    metadata:
+      labels:
+        app: transform-hub
+        version: v1
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "transform-hub"
+        dapr.io/app-port: "8080"
+        dapr.io/config: "dapr-config"
+        dapr.io/log-as-json: "true"
+    spec:
+      serviceAccountName: transform-hub
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: transform-hub
+          image: ghcr.io/dzacharis/repo0/transform-hub:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: KEYCLOAK_URL
+              value: http://keycloak.keycloak.svc.cluster.local:8080
+            - name: KEYCLOAK_REALM
+              value: maltego-hub
+            - name: KEYCLOAK_CLIENT_ID
+              value: transform-hub
+            - name: HUB_URL
+              value: https://api.example.com/transforms
+            - name: HUB_NAME
+              value: "Platform Transform Hub"
+            - name: REQUIRED_SCOPE
+              value: "transforms:execute"
+            - name: KEYCLOAK_ADMIN_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: transform-hub-secrets
+                  key: keycloak-admin-client-secret
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: transform-hub

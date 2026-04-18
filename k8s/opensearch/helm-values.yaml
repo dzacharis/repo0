@@ -1,0 +1,122 @@
+# OpenSearch Helm values
+# Chart: opensearch/opensearch (https://opensearch-project.github.io/helm-charts)
+# Version: 2.x
+#
+# Provides: search, log aggregation, security analytics
+# Paired with: OpenSearch Dashboards + Fluentbit (k8s/logging/)
+
+clusterName: opensearch
+
+replicas: 3   # data + master nodes (single-node mode: set to 1 for dev)
+
+image:
+  repository: opensearchproject/opensearch
+  tag: "2.14.0"
+  pullPolicy: IfNotPresent
+
+opensearchJavaOpts: "-Xms1g -Xmx1g"
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 2Gi
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+
+persistence:
+  enabled: true
+  storageClass: ""    # use cluster default; set to "premium-rwo" on GKE, "gp3" on EKS, "managed-premium" on AKS
+  size: 30Gi
+
+# Cluster config
+config:
+  opensearch.yml: |
+    cluster.name: opensearch
+    network.host: "0.0.0.0"
+
+    # TLS (node-to-node and REST)
+    plugins.security.ssl.transport.pemcert_filepath: esnode.pem
+    plugins.security.ssl.transport.pemkey_filepath: esnode-key.pem
+    plugins.security.ssl.transport.pemtrustedcas_filepath: root-ca.pem
+    plugins.security.ssl.transport.enforce_hostname_verification: false
+    plugins.security.ssl.http.enabled: true
+    plugins.security.ssl.http.pemcert_filepath: esnode.pem
+    plugins.security.ssl.http.pemkey_filepath: esnode-key.pem
+    plugins.security.ssl.http.pemtrustedcas_filepath: root-ca.pem
+
+    # Auth
+    plugins.security.allow_default_init_securityindex: true
+    plugins.security.authcz.admin_dn:
+      - "CN=admin,OU=platform,O=example"
+    plugins.security.nodes_dn:
+      - "CN=opensearch,OU=platform,O=example"
+
+    # Audit logging
+    plugins.security.audit.type: internal_opensearch
+    plugins.security.enable_snapshot_restore_privilege: true
+    plugins.security.check_snapshot_restore_write_privileges: true
+
+    # Index state management
+    plugins.index_state_management.enabled: true
+
+extraEnvs:
+  - name: DISABLE_INSTALL_DEMO_CONFIG
+    value: "true"
+  - name: DISABLE_SECURITY_PLUGIN
+    value: "false"
+
+securityConfig:
+  enabled: true
+  path: /usr/share/opensearch/config/opensearch-security
+  config:
+    data:
+      # Internal users — passwords managed via K8s secret
+      internal_users.yml: |-
+        _meta:
+          type: "internalusers"
+          config_version: 2
+        admin:
+          hash: ""   # Set via securityConfig.adminHash secret
+          reserved: true
+          backend_roles:
+            - "admin"
+          description: "Admin user"
+        fluentbit:
+          hash: ""   # Set via securityConfig.fluentbitHash secret
+          reserved: false
+          backend_roles:
+            - "logstash"
+          description: "Fluentbit log shipper"
+        readonly:
+          hash: ""
+          reserved: false
+          backend_roles:
+            - "readall"
+          description: "Read-only dashboard user"
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: opensearch
+
+service:
+  type: ClusterIP
+  httpPort: 9200
+  transportPort: 9300
+
+networkPolicy:
+  create: true
+  http:
+    enabled: true
+
+# Prometheus metrics via opensearch-exporter sidecar
+monitoring:
+  enabled: false    # set true when Prometheus is available

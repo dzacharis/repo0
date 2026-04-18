@@ -1,0 +1,39 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: transform-hub
+  namespace: apps
+  annotations:
+    kubernetes.io/ingress.class: kong
+    # Rate-limit transform calls per client to prevent abuse
+    konghq.com/plugins: rate-limiting-strict,cors-global
+    # TLS via cert-manager
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    konghq.com/strip-path: "false"
+    konghq.com/preserve-host: "true"
+spec:
+  ingressClassName: kong
+  tls:
+    - hosts:
+        - api.example.com
+      secretName: transform-hub-tls
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          # Transform execution + discovery
+          - path: /transforms/api
+            pathType: Prefix
+            backend:
+              service:
+                name: transform-hub
+                port:
+                  name: http
+          # Client registration (admin-scoped)
+          - path: /transforms/api/v1/clients
+            pathType: Prefix
+            backend:
+              service:
+                name: transform-hub
+                port:
+                  name: http

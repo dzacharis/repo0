@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kong
+  labels:
+    app.kubernetes.io/managed-by: helm
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dapr-system
+  labels:
+    app.kubernetes.io/managed-by: helm
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: keycloak
+  labels:
+    app.kubernetes.io/managed-by: helm
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+  labels:
+    app.kubernetes.io/managed-by: helm
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: apps
+  labels:
+    dapr-enabled: "true"
+---
+# ingestion namespace — the only zone allowed to write to OpenSearch and Neo4j.
+# No pod in apps/ can reach datastores directly; all entity events flow via Dapr pub/sub.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ingestion
+  labels:
+    dapr-enabled: "true"
+    network-zone: "ingestion"
+---
+# neo4j namespace — graph database, accessible only from ingestion namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: neo4j
+  labels:
+    app.kubernetes.io/managed-by: helm
+    network-zone: "datastore"
+---
+# opensearch namespace — replaces inline opensearch in apps; accessible only from ingestion + logging
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: opensearch
+  labels:
+    app.kubernetes.io/managed-by: helm
+    network-zone: "datastore"

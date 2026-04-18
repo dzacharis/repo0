@@ -1,0 +1,30 @@
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: jwt-auth
+  namespace: apps
+  annotations:
+    kubernetes.io/ingress.class: kong
+plugin: jwt
+config:
+  key_claim_name: kid
+  claims_to_verify:
+    - exp
+  maximum_expiration: 3600
+  run_on_preflight: true
+---
+# KongClusterPlugin for global JWT auth (optional, applied per ingress)
+apiVersion: configuration.konghq.com/v1
+kind: KongClusterPlugin
+metadata:
+  name: global-jwt-auth
+  annotations:
+    kubernetes.io/ingress.class: kong
+  labels:
+    global: "false"
+plugin: jwt
+config:
+  key_claim_name: kid
+  claims_to_verify:
+    - exp
+  maximum_expiration: 3600

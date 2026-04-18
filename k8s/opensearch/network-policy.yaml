@@ -1,0 +1,115 @@
+# Network policy for the opensearch namespace.
+#
+# Security model
+# ──────────────
+# OpenSearch is a private datastore. Allowed ingress:
+#   - ingestion namespace  → port 9200 (entity indexing)
+#   - logging namespace    → port 9200 (Fluentbit log ingestion)
+#   - opensearch namespace → ports 9200 + 9300 (inter-node cluster traffic)
+#   - kong namespace       → port 5601 (OpenSearch Dashboards reverse proxy)
+#
+# The apps namespace is explicitly excluded — transforms cannot write to OpenSearch
+# directly. All entity data flows through the ingestion worker.
+
+---
+# Default deny all ingress to opensearch namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: opensearch
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+
+---
+# Allow REST API (:9200) from ingestion worker
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-rest-from-ingestion
+  namespace: opensearch
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: opensearch
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              network-zone: "ingestion"
+          podSelector:
+            matchLabels:
+              app: ingestion-worker
+      ports:
+        - protocol: TCP
+          port: 9200
+
+---
+# Allow REST API (:9200) from Fluentbit (logging namespace)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-rest-from-logging
+  namespace: opensearch
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: opensearch
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: logging
+      ports:
+        - protocol: TCP
+          port: 9200
+
+---
+# Allow inter-node cluster transport (:9300) within opensearch namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cluster-transport
+  namespace: opensearch
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: opensearch
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: opensearch
+      ports:
+        - protocol: TCP
+          port: 9300
+
+---
+# Allow Dashboards (:5601) from kong (reverse proxy for OIDC SSO UI)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dashboards-from-kong
+  namespace: opensearch
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: opensearch-dashboards
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kong
+      ports:
+        - protocol: TCP
+          port: 5601

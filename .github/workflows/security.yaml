@@ -1,0 +1,196 @@
+name: "Security"
+
+# Runs on every push and PR.
+# Also scheduled nightly for dependency drift and new CVE detection.
+# Produces SARIF reports visible in the GitHub Security tab.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [master, main]
+  schedule:
+    - cron: "0 2 * * *"   # 02:00 UTC nightly
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write   # upload SARIF to GitHub Security tab
+  actions: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── 1. Secret Detection ──────────────────────────────────────────────────────
+  secret-detection:
+    name: Secret Detection (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history for Gitleaks
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── 2. SAST / IaC Scanning ───────────────────────────────────────────────────
+  iac-scan:
+    name: IaC Security Scan (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy — Kubernetes manifests
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: k8s/
+          format: sarif
+          output: trivy-k8s.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "0"
+
+      - name: Trivy — Terraform (all providers)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: terraform/
+          format: sarif
+          output: trivy-tf.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "0"
+
+      - name: Upload Trivy SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-k8s.sarif
+          category: trivy-k8s
+
+      - name: Upload Terraform SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-tf.sarif
+          category: trivy-terraform
+
+  # ── 3. Policy-as-Code ─────────────────────────────────────────────────────────
+  opa-policies:
+    name: OPA Policy Check (Conftest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install conftest
+        run: |
+          curl -sL https://github.com/open-policy-agent/conftest/releases/download/v0.50.0/conftest_0.50.0_Linux_x86_64.tar.gz \
+            | tar xz && sudo mv conftest /usr/local/bin
+
+      - name: Run policies against app manifests
+        run: |
+          find k8s/apps/ -name "*.yaml" \
+            | xargs conftest test --policy policies/ --all-namespaces
+        # Fails on deny rules; warns on warn rules (non-blocking)
+
+      - name: Run policies against infra manifests (warn only)
+        run: |
+          find k8s/kong k8s/dapr k8s/keycloak k8s/opensearch -name "*.yaml" 2>/dev/null \
+            | xargs conftest test --policy policies/ --all-namespaces || true
+
+  # ── 4. Checkov (CIS Benchmarks) ───────────────────────────────────────────────
+  checkov:
+    name: Checkov — CIS Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkov — Kubernetes
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: k8s/
+          framework: kubernetes
+          soft_fail: true
+          output_format: cli,sarif
+          output_file_path: console,checkov-k8s.sarif
+
+      - name: Checkov — Terraform
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: terraform/
+          framework: terraform
+          soft_fail: true
+          output_format: cli,sarif
+          output_file_path: console,checkov-tf.sarif
+
+      - name: Upload Checkov SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: checkov-k8s.sarif
+          category: checkov-k8s
+
+  # ── 5. Container Image Scanning ───────────────────────────────────────────────
+  # Runs on schedule or when a new image is referenced in manifests.
+  # On PR/push, scans the previously built image (if it exists).
+  image-scan:
+    name: Image Vulnerability Scan (Trivy)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan sample-app image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghcr.io/${{ github.repository }}/sample-app:latest
+          format: sarif
+          output: trivy-image.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "0"
+
+      - name: Upload image scan SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-container
+
+  # ── 6. SBOM Generation ────────────────────────────────────────────────────────
+  sbom:
+    name: Generate SBOM (Syft + Grype)
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@v0
+
+      - name: Generate SBOM for repo
+        run: syft dir:. -o cyclonedx-json=sbom.json
+
+      - name: Scan SBOM for vulnerabilities (Grype)
+        uses: anchore/scan-action@v3
+        with:
+          sbom: sbom.json
+          fail-build: false
+          severity-cutoff: critical
+          output-format: sarif
+
+      - name: Upload Grype SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif
+          category: grype-sbom
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: sbom.json
+          retention-days: 90

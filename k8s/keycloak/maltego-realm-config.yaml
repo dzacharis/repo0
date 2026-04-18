@@ -1,0 +1,114 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-maltego-realm-config
+  namespace: keycloak
+data:
+  maltego-hub.json: |
+    {
+      "realm": "maltego-hub",
+      "enabled": true,
+      "displayName": "Maltego Transform Hub",
+      "displayNameHtml": "<b>Maltego Transform Hub</b>",
+      "sslRequired": "external",
+      "registrationAllowed": false,
+      "loginWithEmailAllowed": false,
+      "bruteForceProtected": true,
+      "permanentLockout": false,
+      "failureFactor": 10,
+      "accessTokenLifespan": 300,
+      "ssoSessionIdleTimeout": 1800,
+      "ssoSessionMaxLifespan": 36000,
+
+      "clientScopes": [
+        {
+          "name": "transforms:execute",
+          "description": "Permission to call transform endpoints",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "false"
+          }
+        },
+        {
+          "name": "transforms:admin",
+          "description": "Permission to register and delete transform clients",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "false"
+          }
+        }
+      ],
+
+      "clients": [
+        {
+          "clientId": "transform-hub",
+          "name": "Transform Hub Service",
+          "description": "The transform-hub backend — validates tokens issued to this audience",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": false,
+          "clientAuthenticatorType": "client-secret",
+          "secret": "transform-hub-secret-change-me",
+          "serviceAccountsEnabled": false,
+          "standardFlowEnabled": false,
+          "implicitFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "bearerOnly": true
+        },
+        {
+          "clientId": "transform-hub-admin",
+          "name": "Transform Hub Admin",
+          "description": "Used by the hub service to create/delete Keycloak clients via Admin API",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": false,
+          "clientAuthenticatorType": "client-secret",
+          "secret": "transform-hub-admin-secret-change-me",
+          "serviceAccountsEnabled": true,
+          "standardFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "defaultClientScopes": [],
+          "serviceAccountRoles": []
+        },
+        {
+          "clientId": "maltego-desktop",
+          "name": "Maltego Desktop Client",
+          "description": "Default client for Maltego desktop operator authentication",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": false,
+          "clientAuthenticatorType": "client-secret",
+          "secret": "maltego-desktop-secret-change-me",
+          "serviceAccountsEnabled": true,
+          "standardFlowEnabled": false,
+          "implicitFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "defaultClientScopes": ["transforms:execute"],
+          "optionalClientScopes": []
+        }
+      ],
+
+      "roles": {
+        "realm": [
+          {
+            "name": "transform-operator",
+            "description": "Can execute transforms"
+          },
+          {
+            "name": "transform-admin",
+            "description": "Can register and manage transform clients"
+          }
+        ]
+      },
+
+      "clientScopeMappings": {
+        "transform-hub-admin": [
+          {
+            "client": "realm-management",
+            "roles": ["manage-clients", "view-clients"]
+          }
+        ]
+      }
+    }

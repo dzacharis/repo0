@@ -1,0 +1,21 @@
+# Kong HTTP Log plugin — sends access logs to OpenSearch via Fluentbit HTTP input
+# Alternatively, Fluentbit's tail input already captures Kong stdout logs;
+# this plugin is for structured per-request analytics with full request/response detail.
+apiVersion: configuration.konghq.com/v1
+kind: KongClusterPlugin
+metadata:
+  name: http-log-opensearch
+  annotations:
+    kubernetes.io/ingress.class: kong
+  labels:
+    global: "true"
+plugin: http-log
+config:
+  http_endpoint: http://fluent-bit.logging.svc.cluster.local:9880/kong.access
+  method: POST
+  timeout: 1000
+  keepalive: 1000
+  flush_timeout: 2
+  retry_count: 10
+  content_type: application/json
+  custom_fields_by_lua: {}

@@ -1,0 +1,276 @@
+name: "Documentation"
+
+# Runs on every PR and push that touches docs or source code.
+# Validates markdown quality, links, diagrams, spelling, and doc coverage.
+# All checks run as PR status checks — merge is blocked on lint + broken-links.
+
+on:
+  pull_request:
+    branches: [master, main]
+  push:
+    branches: [master, main]
+    paths:
+      - "docs/**"
+      - "**.md"
+      - "src/**"
+      - "k8s/**"
+      - ".cspell.json"
+      - ".markdownlint.json"
+      - ".lychee.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write   # post doc-coverage summary as PR comment
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── 1. Markdown Lint ─────────────────────────────────────────────────────────
+  markdown-lint:
+    name: Markdown Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run markdownlint-cli2
+        uses: DavidAnson/markdownlint-cli2-action@v16
+        with:
+          globs: |
+            **/*.md
+            !node_modules
+            !**/vendor
+
+  # ── 2. Broken Link Check ─────────────────────────────────────────────────────
+  link-check:
+    name: Broken Link Check (Lychee)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lychee — check all markdown links
+        uses: lycheeverse/lychee-action@v1
+        with:
+          args: >-
+            --config .lychee.toml
+            --verbose
+            --no-progress
+            "**/*.md"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload lychee report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lychee-report
+          path: lychee/out.md
+          retention-days: 7
+
+  # ── 3. Mermaid Diagram Syntax ─────────────────────────────────────────────────
+  mermaid-check:
+    name: Mermaid Diagram Syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Mermaid CLI
+        run: npm install -g @mermaid-js/mermaid-cli
+
+      - name: Extract and validate Mermaid blocks
+        run: |
+          set -euo pipefail
+          TMPDIR=$(mktemp -d)
+          ERRORS=0
+
+          # Extract every ```mermaid block from all markdown files
+          while IFS= read -r md_file; do
+            python3 - "$md_file" "$TMPDIR" <<'PYEOF'
+          import sys, re, os
+          md_file, tmpdir = sys.argv[1], sys.argv[2]
+          content = open(md_file).read()
+          blocks = re.findall(r'```mermaid\n(.*?)```', content, re.DOTALL)
+          for i, block in enumerate(blocks):
+              safe = os.path.basename(md_file).replace('.md','')
+              out = os.path.join(tmpdir, f"{safe}_{i}.mmd")
+              open(out, 'w').write(block)
+          PYEOF
+          done < <(find . -name "*.md" -not -path "./node_modules/*")
+
+          echo "Found $(ls $TMPDIR/*.mmd 2>/dev/null | wc -l) Mermaid diagram(s)"
+
+          # Validate each diagram
+          for mmd_file in "$TMPDIR"/*.mmd; do
+            [ -f "$mmd_file" ] || continue
+            echo "Checking: $(basename $mmd_file)"
+            if ! mmdc -i "$mmd_file" -o "$TMPDIR/out.svg" --quiet 2>&1; then
+              echo "::error file=$mmd_file::Mermaid diagram syntax error"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done
+
+          if [ $ERRORS -gt 0 ]; then
+            echo "::error::$ERRORS Mermaid diagram(s) failed validation"
+            exit 1
+          fi
+          echo "All Mermaid diagrams are valid."
+
+  # ── 4. Spell Check ────────────────────────────────────────────────────────────
+  spell-check:
+    name: Spell Check (cspell)
+    runs-on: ubuntu-latest
+    # Warn only — does not block merge
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run cspell
+        uses: streetsidesoftware/cspell-action@v6
+        with:
+          files: "**/*.md"
+          config: .cspell.json
+          strict: false
+          verbose: false
+
+  # ── 5. Doc Coverage Check ────────────────────────────────────────────────────
+  # Warns when code files change in a PR but no documentation file was updated.
+  # Does NOT block merge — posts a summary comment on the PR.
+  doc-coverage:
+    name: Documentation Coverage
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect undocumented changes
+        id: coverage
+        run: |
+          BASE=${{ github.event.pull_request.base.sha }}
+          HEAD=${{ github.event.pull_request.head.sha }}
+
+          # Files changed in this PR
+          CHANGED=$(git diff --name-only "$BASE" "$HEAD")
+
+          # Source / manifest areas that should have accompanying docs
+          declare -A DOC_MAP=(
+            ["src/transform-hub/transforms/"]="docs/transform-hub.md"
+            ["src/transform-hub/"]="docs/transform-hub.md"
+            ["k8s/opensearch/"]="docs/observability.md"
+            ["k8s/logging/"]="docs/observability.md"
+            ["k8s/dapr/"]="docs/architecture.md"
+            ["k8s/keycloak/"]="docs/architecture.md"
+            ["k8s/kong/"]="docs/architecture.md"
+            ["terraform/gcp/"]="docs/cloud-providers/gcp.md"
+            ["terraform/aws/"]="docs/cloud-providers/aws.md"
+            ["terraform/azure/"]="docs/cloud-providers/azure.md"
+            ["terraform/rancher/"]="docs/cloud-providers/rancher.md"
+          )
+
+          WARNINGS=""
+          for CODE_PATH in "${!DOC_MAP[@]}"; do
+            DOC_PATH="${DOC_MAP[$CODE_PATH]}"
+            CODE_CHANGED=$(echo "$CHANGED" | grep "^$CODE_PATH" || true)
+            DOC_CHANGED=$(echo "$CHANGED" | grep "^$DOC_PATH" || true)
+
+            if [ -n "$CODE_CHANGED" ] && [ -z "$DOC_CHANGED" ]; then
+              WARNINGS="${WARNINGS}\n⚠️  \`${CODE_PATH}\` changed but \`${DOC_PATH}\` was not updated."
+            fi
+          done
+
+          if [ -n "$WARNINGS" ]; then
+            echo "warnings=true" >> "$GITHUB_OUTPUT"
+            printf '%b' "$WARNINGS" > /tmp/doc_warnings.txt
+            cat /tmp/doc_warnings.txt
+          else
+            echo "warnings=false" >> "$GITHUB_OUTPUT"
+            echo "✅ All changed code areas have corresponding doc updates." > /tmp/doc_warnings.txt
+          fi
+
+      - name: Post doc-coverage comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const warnings = fs.readFileSync('/tmp/doc_warnings.txt', 'utf8');
+            const hasWarnings = '${{ steps.coverage.outputs.warnings }}' === 'true';
+
+            const header = hasWarnings
+              ? '### ⚠️ Documentation Coverage\n\nThe following code areas were modified without a corresponding documentation update. Please update the docs or confirm the change is documentation-free.\n\n'
+              : '### ✅ Documentation Coverage\n\n';
+
+            const body = header + warnings + '\n\n*This comment is auto-generated by the `docs.yaml` pipeline.*';
+
+            // Find and update an existing bot comment, or create a new one
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('Documentation Coverage')
+            );
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  # ── 6. Docs Build Check ───────────────────────────────────────────────────────
+  # Ensures all referenced docs files actually exist (no dead doc references).
+  docs-structure:
+    name: Docs Structure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify referenced docs exist
+        run: |
+          set -euo pipefail
+          ERRORS=0
+
+          check_link() {
+            local target="$1"
+            local source="$2"
+            # Strip anchors and query strings
+            local path="${target%%#*}"
+            path="${path%%\?*}"
+            [ -z "$path" ] && return 0          # anchor-only link
+            [[ "$path" =~ ^https?:// ]] && return 0  # external link
+
+            # Resolve relative to the source file's directory
+            local dir
+            dir=$(dirname "$source")
+            local resolved="$dir/$path"
+            if [ ! -e "$resolved" ]; then
+              echo "::error file=$source::Dead internal link → $target (resolved: $resolved)"
+              ERRORS=$((ERRORS + 1))
+            fi
+          }
+
+          while IFS= read -r md_file; do
+            while IFS= read -r link; do
+              check_link "$link" "$md_file"
+            done < <(grep -oP '\[.*?\]\(\K[^)]+' "$md_file" 2>/dev/null || true)
+          done < <(find docs -name "*.md")
+
+          [ $ERRORS -eq 0 ] || exit 1
+          echo "All internal doc links resolve correctly."

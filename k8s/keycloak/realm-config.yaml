@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm-config
+  namespace: keycloak
+data:
+  myrealm.json: |
+    {
+      "realm": "myrealm",
+      "enabled": true,
+      "displayName": "My Application Realm",
+      "displayNameHtml": "<b>My Application</b>",
+      "sslRequired": "external",
+      "registrationAllowed": false,
+      "loginWithEmailAllowed": true,
+      "duplicateEmailsAllowed": false,
+      "resetPasswordAllowed": true,
+      "editUsernameAllowed": false,
+      "bruteForceProtected": true,
+      "permanentLockout": false,
+      "maxFailureWaitSeconds": 900,
+      "minimumQuickLoginWaitSeconds": 60,
+      "waitIncrementSeconds": 60,
+      "quickLoginCheckMilliSeconds": 1000,
+      "maxDeltaTimeSeconds": 43200,
+      "failureFactor": 5,
+      "accessTokenLifespan": 300,
+      "accessTokenLifespanForImplicitFlow": 900,
+      "ssoSessionIdleTimeout": 1800,
+      "ssoSessionMaxLifespan": 36000,
+      "roles": {
+        "realm": [
+          { "name": "user", "description": "Standard user" },
+          { "name": "admin", "description": "Administrator" },
+          { "name": "service", "description": "Service account role" }
+        ]
+      },
+      "clients": [
+        {
+          "clientId": "kong",
+          "name": "Kong API Gateway",
+          "enabled": true,
+          "clientAuthenticatorType": "client-secret",
+          "secret": "kong-client-secret-change-me",
+          "redirectUris": ["https://api.example.com/*"],
+          "webOrigins": ["https://api.example.com"],
+          "bearerOnly": false,
+          "publicClient": false,
+          "standardFlowEnabled": true,
+          "implicitFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": true,
+          "protocol": "openid-connect",
+          "attributes": {
+            "access.token.lifespan": "300"
+          }
+        },
+        {
+          "clientId": "frontend",
+          "name": "Frontend Application",
+          "enabled": true,
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "implicitFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "redirectUris": ["https://app.example.com/*", "http://localhost:3000/*"],
+          "webOrigins": ["https://app.example.com", "http://localhost:3000"],
+          "protocol": "openid-connect"
+        },
+        {
+          "clientId": "sample-service",
+          "name": "Sample Backend Service",
+          "enabled": true,
+          "clientAuthenticatorType": "client-secret",
+          "secret": "sample-service-secret-change-me",
+          "bearerOnly": true,
+          "serviceAccountsEnabled": true,
+          "protocol": "openid-connect"
+        }
+      ],
+      "defaultDefaultClientScopes": ["roles", "profile", "email", "web-origins"],
+      "defaultOptionalClientScopes": ["offline_access", "address", "phone"]
+    }

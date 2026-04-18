@@ -1,0 +1,107 @@
+# ISM (Index State Management) policies for log retention
+# Applied via opensearch-ism-policy Job or OpenSearch REST API on first boot
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opensearch-ism-policies
+  namespace: opensearch
+data:
+  platform-logs-policy.json: |
+    {
+      "policy": {
+        "description": "Platform application log retention",
+        "default_state": "hot",
+        "states": [
+          {
+            "name": "hot",
+            "actions": [
+              {
+                "rollover": {
+                  "min_index_age": "1d",
+                  "min_primary_shard_size": "5gb"
+                }
+              }
+            ],
+            "transitions": [
+              {
+                "state_name": "warm",
+                "conditions": { "min_index_age": "7d" }
+              }
+            ]
+          },
+          {
+            "name": "warm",
+            "actions": [
+              { "replica_count": { "number_of_replicas": 0 } },
+              { "index_priority": { "priority": 50 } }
+            ],
+            "transitions": [
+              {
+                "state_name": "delete",
+                "conditions": { "min_index_age": "30d" }
+              }
+            ]
+          },
+          {
+            "name": "delete",
+            "actions": [{ "delete": {} }],
+            "transitions": []
+          }
+        ],
+        "ism_template": [
+          {
+            "index_patterns": ["platform-logs-*", "kong-access-*", "dapr-*"],
+            "priority": 100
+          }
+        ]
+      }
+    }
+  security-logs-policy.json: |
+    {
+      "policy": {
+        "description": "Security and audit log retention (90 days)",
+        "default_state": "hot",
+        "states": [
+          {
+            "name": "hot",
+            "actions": [
+              {
+                "rollover": {
+                  "min_index_age": "1d",
+                  "min_primary_shard_size": "2gb"
+                }
+              }
+            ],
+            "transitions": [
+              {
+                "state_name": "warm",
+                "conditions": { "min_index_age": "14d" }
+              }
+            ]
+          },
+          {
+            "name": "warm",
+            "actions": [
+              { "replica_count": { "number_of_replicas": 0 } }
+            ],
+            "transitions": [
+              {
+                "state_name": "delete",
+                "conditions": { "min_index_age": "90d" }
+              }
+            ]
+          },
+          {
+            "name": "delete",
+            "actions": [{ "delete": {} }],
+            "transitions": []
+          }
+        ],
+        "ism_template": [
+          {
+            "index_patterns": ["keycloak-audit-*", "security-events-*"],
+            "priority": 200
+          }
+        ]
+      }
+    }

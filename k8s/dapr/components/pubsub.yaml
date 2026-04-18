@@ -1,0 +1,25 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: pubsub
+  namespace: apps
+spec:
+  type: pubsub.redis
+  version: v1
+  metadata:
+    - name: redisHost
+      value: redis-master.redis.svc.cluster.local:6379
+    - name: redisPassword
+      secretKeyRef:
+        name: redis-secret
+        key: redis-password
+    - name: enableTLS
+      value: "false"
+    - name: maxRetries
+      value: "3"
+    - name: processingTimeout
+      value: 60s
+    - name: redeliveryDelay
+      value: 10s
+auth:
+  secretStore: kubernetes

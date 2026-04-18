@@ -1,0 +1,19 @@
+# Rancher / RKE2-specific Kong Helm value overrides
+# Rancher uses MetalLB or cloud provider LB depending on the underlying infra.
+# Adjust proxy.type to match your setup.
+
+proxy:
+  type: LoadBalancer   # or NodePort if using Rancher Ingress + MetalLB
+
+# Rancher Monitoring integration: expose Kong metrics
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8100"
+  prometheus.io/path: "/metrics"
+
+# Rancher Monitoring ServiceMonitor (if using rancher-monitoring chart)
+serviceMonitor:
+  enabled: true
+
+# Canal CNI compatibility: disable hostNetwork
+hostNetwork: false
