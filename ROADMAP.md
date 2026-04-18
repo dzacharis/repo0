@@ -144,6 +144,52 @@ Expanding the set of built-in OSINT and enrichment transforms available out of t
 
 ---
 
+## 🔌 MCP (Model Context Protocol) — Priority Track
+
+Expose the platform as a first-class MCP server so AI assistants (Claude, Cursor, VS Code
+Copilot, etc.) can invoke transforms and query the graph as native tools — no Maltego client
+required.
+
+> **Background**: [MCP](https://modelcontextprotocol.io) is the open standard for connecting
+> AI models to external tools and data sources. Each transform is a natural MCP tool; the
+> manifest endpoint already provides structured discovery.
+
+| # | Item | Description | Effort |
+|---|------|-------------|--------|
+| MCP-01 | **MCP server endpoint in Transform Hub** | Implement `GET /mcp` (server info) and `POST /mcp` (JSON-RPC 2.0) alongside the existing Maltego API. Reuse `@register` transforms as MCP tool definitions auto-generated from `TransformMeta`. | M |
+| MCP-02 | **Transform → MCP tool schema mapping** | Each transform's `TransformMeta` maps to an MCP `Tool` JSON schema: `input_entity` becomes the `inputSchema`, output entities become the return type. No transform code changes required. | S |
+| MCP-03 | **Authentication via MCP `Authorization` header** | Reuse the existing Keycloak JWKS validation (`auth.py`) for MCP bearer token auth — same token, same scopes (`transforms:execute`). | S |
+| MCP-04 | **MCP resource: entity graph queries** | Expose Neo4j as an MCP `Resource` — AI assistants can query `entity-graph://domain/example.com` to get all related entities as JSON without writing Cypher. | M |
+| MCP-05 | **MCP resource: OpenSearch entity lookup** | Expose `entity-search://<type>/<query>` as an MCP resource backed by OpenSearch full-text search. | S |
+| MCP-06 | **Claude Desktop / claude.ai config snippet** | Generate a ready-to-paste `claude_desktop_config.json` entry from the manifest endpoint so users can add the hub in one step. | XS |
+| MCP-07 | **VS Code / Cursor MCP config generation** | Same as MCP-06 for editor-based MCP clients. | XS |
+| MCP-08 | **Streaming MCP responses** | For long-running transforms, use MCP's streaming response format rather than blocking. Pairs with roadmap item D-10 (async transforms). | L |
+| MCP-09 | **MCP server in Docker Compose** | Add `mcp-server` service to the local dev stack (D-02) so developers can test AI ↔ transform interaction on a laptop. | S |
+| MCP-10 | **MCP tool versioning** | Expose `v1/DomainToIP` and `v2/DomainToIP` as distinct MCP tools when transform versioning (D-09) is implemented. | S |
+
+### MCP Architecture (planned)
+
+```
+AI Assistant (Claude / Cursor / etc.)
+        │  MCP JSON-RPC 2.0
+        │  Authorization: Bearer <keycloak-token>
+        ▼
+  Kong Gateway  ─── rate-limit, OIDC validation ───►  Transform Hub
+                                                          │
+                          ┌───────────────────────────────┤
+                          │                               │
+                   MCP handler                   Maltego handler
+                  /mcp  (new)                  /api/v2/transforms (existing)
+                          │
+              ┌───────────┴───────────┐
+              │                       │
+        Tools (transforms)      Resources (graph/search)
+    @register → Tool schema     entity-graph://...
+                                entity-search://...
+```
+
+---
+
 ## Done ✅
 
 Items from the initial roadmap that have been implemented.
@@ -163,3 +209,7 @@ Items from the initial roadmap that have been implemented.
 | Docs CI pipeline (lint, links, mermaid, spell, coverage) | ✅ |
 | Architecture diagrams (platform, auth, Dapr, CI/CD, clouds, Maltego) | ✅ |
 | Separation-of-concerns diagrams (DX philosophy) | ✅ |
+| Managed ingestion to OpenSearch + Neo4j (network-isolated, schema-driven) | ✅ |
+| Bill of Materials (SBOM companion) | ✅ |
+| Developer onboarding guide | ✅ |
+| Admin / maintainer onboarding guide | ✅ |

@@ -1,8 +1,15 @@
 # Kubernetes Platform Infrastructure
 
-A production-ready Kubernetes platform with Kong API Gateway, Dapr, Keycloak, OpenSearch, and
-segregated CI/CD pipelines. Deployable on **GKE**, **EKS**, **AKS**, or **Rancher (RKE2)** —
+A production-ready Kubernetes platform with Kong API Gateway, Dapr, Keycloak, OpenSearch, Neo4j,
+and segregated CI/CD pipelines. Deployable on **GKE**, **EKS**, **AKS**, or **Rancher (RKE2)** —
 or any Kubernetes v1.27+ cluster.
+
+The platform follows a **batteries-included** philosophy: business developers write only value code
+(transforms, domain logic). Authentication, rate-limiting, audit logging, pub/sub, graph
+persistence, and observability are handled by no-code middleware.
+
+> **Next milestone**: expose all transforms as an [MCP (Model Context Protocol)](https://modelcontextprotocol.io)
+> server so AI assistants (Claude, Cursor, etc.) can invoke them natively as tools — see [Roadmap § MCP](#roadmap).
 
 ## Architecture Diagrams
 
@@ -272,6 +279,27 @@ All docs live in [`docs/`](docs/) and are validated on every PR by the **`docs.y
 | Spell check | `cspell` | ⚠️ Warn only |
 | Doc coverage (code changed without docs) | Custom script | ⚠️ Warn only |
 
+## Ingestion Pipeline
+
+Transform results are automatically persisted to **OpenSearch** and **Neo4j** via a dedicated
+ingestion worker that runs in a network-isolated zone. Business code never touches the datastores.
+
+```
+apps ns (Transform Hub) → Dapr pub/sub → ingestion ns (Ingestion Worker) → opensearch ns (:9200)
+                                                                          → neo4j ns (:7687 Bolt)
+```
+
+- **Schema-driven**: `src/ingestion-worker/schema.py` maps each Maltego entity type to an
+  OpenSearch index + field types and a Neo4j node label + MERGE key. Adding a new entity type
+  is a one-line config change.
+- **Graph relationships**: the schema also maps `(transform_name, input_type, output_type)` to
+  Cypher relationship types — e.g. `DomainToIP` creates `(:Domain)-[:RESOLVES_TO]->(:IPAddress)`.
+- **Merge semantics**: deterministic doc IDs in OpenSearch; `MERGE` Cypher in Neo4j — no duplicates.
+- **Isolated by NetworkPolicy**: the `apps` namespace has no egress to OpenSearch or Neo4j.
+
+See [docs/ingestion.md](docs/ingestion.md) for the full architecture, schema reference, and
+operational guide.
+
 ## Onboarding
 
 | Role | Start here |
@@ -285,6 +313,7 @@ All docs live in [`docs/`](docs/) and are validated on every PR by the **`docs.y
 - [Architecture Diagrams](docs/diagrams.md) — 14 Mermaid diagrams
 - [Developer Experience — Batteries Included](docs/developer-experience.md)
 - [Maltego Transform Hub](docs/transform-hub.md)
+- [Ingestion Pipeline — OpenSearch & Neo4j](docs/ingestion.md)
 - [Observability — OpenSearch & Logging](docs/observability.md)
 - [Operator Runbook](docs/runbook.md)
 - [Bill of Materials](BILL-OF-MATERIALS.md)
@@ -297,4 +326,8 @@ All docs live in [`docs/`](docs/) and are validated on every PR by the **`docs.y
 
 See [ROADMAP.md](ROADMAP.md) for the full list of planned extensions, organized by theme:
 transforms, infrastructure, security, developer experience, observability, multi-tenancy, AI/LLM,
-packaging, and governance. Items are tagged with effort estimates (XS → XL).
+packaging, governance, and **MCP (Model Context Protocol)**.
+
+The MCP track (`MCP-01` → `MCP-10`) is the current priority: expose all transforms as MCP tools
+so AI assistants can invoke them natively, and expose the Neo4j graph as MCP resources. Items are
+tagged with effort estimates (XS → XL).
