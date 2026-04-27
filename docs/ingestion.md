@@ -59,7 +59,7 @@ sequenceDiagram
 
 ### Network Zone Isolation
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │ Namespace: apps                                                  │
 │   transform-hub → Dapr sidecar → pub/sub                        │
@@ -170,6 +170,7 @@ when it processes a transform result.
 
 1. Open `src/ingestion-worker/schema.py`.
 2. Add an `EntityMapping` to `ENTITY_SCHEMA`:
+
    ```python
    "maltego.Certificate": EntityMapping(
        opensearch_index="entities-certificate",
@@ -188,7 +189,9 @@ when it processes a transform result.
        ],
    ),
    ```
+
 3. If the transform that produces this entity should create a relationship, add to `RELATIONSHIP_SCHEMA`:
+
    ```python
    ("DomainToCert", "maltego.Domain", "maltego.Certificate"): RelationshipMapping(
        rel_type="SECURED_BY",
@@ -196,6 +199,7 @@ when it processes a transform result.
        target_label="TLSCertificate",
    ),
    ```
+
 4. Push — the ingestion worker picks up the schema at startup. Neo4j constraints are
    created automatically via `ensure_constraints()`.
 
@@ -207,12 +211,14 @@ No other files need to change.
 
 Each entity becomes a document with a **deterministic ID** = `sha256(type + "::" + value)`.
 This means:
+
 - The same entity observed by multiple transforms produces one document, not many.
 - `first_seen` is set on creation and never overwritten.
 - `last_seen` is updated on every observation.
 - `sources` is a keyword array that accumulates transform names (deduplicated via Painless script).
 
 Example document in `entities-domain`:
+
 ```json
 {
   "_id": "a3f4...b12",
@@ -337,6 +343,7 @@ kubectl exec -n neo4j pod/neo4j-0 -- \
 
 Failed events (after 5 retries) land in the `entity-graph-dlq` Redis stream.
 Inspect them:
+
 ```bash
 # Via Redis CLI
 kubectl exec -n redis statefulset/redis-master -- \
@@ -346,6 +353,7 @@ kubectl exec -n redis statefulset/redis-master -- \
 ### Disabling a datastore at runtime
 
 Both writers can be disabled without redeployment:
+
 ```bash
 # Disable Neo4j writes only
 kubectl set env deployment/ingestion-worker ENABLE_NEO4J=false -n ingestion
@@ -364,6 +372,7 @@ access and republish events from a specific offset using the Dapr pub/sub API.
 
 The ingestion-worker HPA scales 2–8 pods based on CPU and memory.
 For high-volume OSINT campaigns, temporarily increase `MAX_CONCURRENT_EVENTS`:
+
 ```bash
 kubectl set env deployment/ingestion-worker MAX_CONCURRENT_EVENTS=25 -n ingestion
 ```

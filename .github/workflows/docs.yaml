@@ -84,6 +84,9 @@ jobs:
       - name: Install Mermaid CLI
         run: npm install -g @mermaid-js/mermaid-cli
 
+      - name: Create Puppeteer config
+        run: echo '{"args":["--no-sandbox","--disable-setuid-sandbox"]}' > /tmp/puppeteer-config.json
+
       - name: Extract and validate Mermaid blocks
         run: |
           set -euo pipefail
@@ -110,7 +113,7 @@ jobs:
           for mmd_file in "$TMPDIR"/*.mmd; do
             [ -f "$mmd_file" ] || continue
             echo "Checking: $(basename $mmd_file)"
-            if ! mmdc -i "$mmd_file" -o "$TMPDIR/out.svg" --quiet 2>&1; then
+            if ! mmdc -i "$mmd_file" -o "$TMPDIR/out.svg" --puppeteerConfigFile /tmp/puppeteer-config.json --quiet 2>&1; then
               echo "::error file=$mmd_file::Mermaid diagram syntax error"
               ERRORS=$((ERRORS + 1))
             fi

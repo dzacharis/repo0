@@ -4,8 +4,8 @@ kind: Kustomization
 resources:
   - ../../base
 
-patchesStrategicMerge:
-  - patches/replicas-dev.yaml
+patches:
+  - path: patches/replicas-dev.yaml
 
 images:
   - name: sample-app

@@ -16,7 +16,7 @@ This platform is a Kubernetes-native infrastructure stack composed of:
 
 ## Traffic Flow
 
-```
+```text
 Client (browser / API consumer)
         │
         │ HTTPS (TLS terminated at Kong)
@@ -67,7 +67,7 @@ Client (browser / API consumer)
 
 ## Authentication Flow (OIDC via Kong + Keycloak)
 
-```
+```text
 1. Client requests a protected endpoint through Kong
 2. Kong's OIDC plugin checks for a valid Bearer token in Authorization header
 3. If absent/invalid → Kong redirects to Keycloak authorization endpoint
@@ -79,6 +79,7 @@ Client (browser / API consumer)
 ```
 
 Configured Keycloak clients:
+
 - `kong` — confidential client used by the Kong OIDC plugin
 - `frontend` — public client for browser SPAs
 - `sample-service` — bearer-only client for backend service token validation
@@ -89,7 +90,7 @@ Dapr injects a sidecar proxy into each pod in namespaces with `dapr.io/enabled: 
 
 Applications interact with Dapr via localhost HTTP/gRPC — no SDK required:
 
-```
+```text
 # Save state
 PUT http://localhost:3500/v1.0/state/statestore
 

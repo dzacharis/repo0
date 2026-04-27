@@ -30,7 +30,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: transform-hub
-          image: ghcr.io/dzacharis/repo0/transform-hub:latest
+          image: ghcr.io/dzacharis/repo0/transform-hub:sha-placeholder
           imagePullPolicy: Always
           ports:
             - name: http

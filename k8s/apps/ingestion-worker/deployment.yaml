@@ -42,7 +42,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ingestion-worker
-          image: ghcr.io/dzacharis/repo0/ingestion-worker:latest
+          image: ghcr.io/dzacharis/repo0/ingestion-worker:sha-placeholder
           imagePullPolicy: Always
           ports:
             - name: http

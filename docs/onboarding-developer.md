@@ -45,7 +45,7 @@ You should see the built-in transforms listed (DomainToIP, DomainToWHOIS, etc.).
 
 ## 2. Understand the project structure
 
-```
+```text
 src/transform-hub/
 ├── main.py                  # FastAPI app assembly — you don't touch this
 ├── config.py                # Settings (env-driven) — you don't touch this
@@ -169,7 +169,7 @@ curl -s -X POST http://localhost:8080/api/v2/transforms/DomainToMXRecord \
       </MaltegoTransformRequestMessage></MaltegoMessage>'
 ```
 
-> **Token**: get one from Keycloak (see [Getting a token](#getting-a-token-for-local-testing)).
+> **Token**: get one from Keycloak (see [Getting a token](#6-getting-a-token-for-local-testing)).
 
 ---
 

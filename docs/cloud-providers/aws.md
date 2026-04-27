@@ -175,9 +175,11 @@ EOF
 ## Step 5 — Update cloud-specific values
 
 Edit `k8s/cloud-overlays/aws/keycloak-values.yaml`:
+
 - Set `externalDatabase.host` to the `rds_endpoint` Terraform output (hostname only, no port)
 
 Edit `k8s/cloud-overlays/aws/dapr-statestore.yaml`:
+
 - Set `redisHost` values to `<redis_endpoint>:6379`
 
 ## Step 6 — Install the platform

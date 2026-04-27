@@ -17,7 +17,7 @@ It provisions and manages multiple downstream clusters, provides a unified UI, a
 
 ## Architecture
 
-```
+```text
 ┌────────────────────────────────────────────────┐
 │  Rancher Management Cluster (RKE2)             │
 │  ┌────────────┐  ┌───────┐  ┌───────────────┐ │
@@ -92,6 +92,7 @@ terraform apply
 ```
 
 This creates:
+
 - A new RKE2 downstream cluster registered with Rancher
 - Platform project with resource quotas
 - Namespaces: kong, dapr-system, keycloak, apps
@@ -152,6 +153,7 @@ or integrate with Vault via the Rancher Vault Helm chart.
 The script works identically on Rancher/RKE2 as on any other Kubernetes cluster.
 
 For Rancher-specific Kong metrics integration:
+
 ```bash
 helm upgrade --install kong kong/ingress -n kong \
   -f k8s/kong/helm-values.yaml \
@@ -174,6 +176,7 @@ kubectl get bundle -n fleet-local
 
 After this, any push to the `master` branch will automatically reconcile the cluster state.
 The Fleet bundle syncs:
+
 - All namespaces
 - Dapr components (statestore, pubsub, secretstore, resiliency)
 - Kong plugins
@@ -190,11 +193,13 @@ kubectl get svc -n cattle-monitoring-system rancher-monitoring-grafana
 ```
 
 Pre-built dashboards available in Rancher UI:
+
 - Cluster metrics (CPU, memory, network per namespace)
 - Kong metrics (requests/sec, latency, error rates) via the Kong Prometheus plugin
 - Dapr metrics (sidecar latency, state store ops) via `dapr.io/enable-metrics: "true"`
 
 Enable Kong metrics scraping:
+
 ```bash
 # Kong exposes Prometheus metrics on port 8100
 # The cloud-overlay already adds the ServiceMonitor — just deploy it:
@@ -224,12 +229,14 @@ Update `.github/workflows/deploy-dev.yaml` to only update the image tag in the k
 ## RKE2 Hardening Notes
 
 RKE2 ships with CIS Benchmark hardening enabled by default:
+
 - `profile: cis` in the cluster config applies CIS Kubernetes Benchmark v1.7 controls
 - Pod Security Standards enforced: `restricted` profile in `apps` namespace
 - Audit logging enabled by default
 - etcd encryption at rest for secrets
 
 For additional hardening, enable NeuVector:
+
 ```bash
 helm upgrade --install neuvector neuvector/core \
   --namespace cattle-neuvector-system --create-namespace \

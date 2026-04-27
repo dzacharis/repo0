@@ -183,6 +183,7 @@ Import these saved objects into OpenSearch Dashboards after first boot:
 | **Platform Overview** | Combined view: all namespaces, log volume, error rate trends |
 
 To create index patterns after install:
+
 1. Open `https://logs.example.com`
 2. Management → Index Patterns → Create
 3. Pattern: `platform-logs-*`, time field: `@timestamp`

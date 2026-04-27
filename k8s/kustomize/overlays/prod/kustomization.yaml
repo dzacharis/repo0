@@ -4,11 +4,11 @@ kind: Kustomization
 resources:
   - ../../base
 
-patchesStrategicMerge:
-  - patches/replicas-prod.yaml
+patches:
+  - path: patches/replicas-prod.yaml
 
-# IMAGE_TAG is substituted by the deploy pipeline via envsubst or kustomize edit set image
+# IMAGE_TAG is substituted by the deploy pipeline via: kustomize edit set image sample-app=...:$IMAGE_TAG
 images:
   - name: sample-app
     newName: ghcr.io/dzacharis/repo0/sample-app
-    newTag: latest   # overridden at deploy time: kustomize edit set image sample-app=...:$IMAGE_TAG
+    newTag: sha-placeholder

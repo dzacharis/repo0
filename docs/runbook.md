@@ -44,13 +44,13 @@ kubectl create secret generic sample-app-secrets \
   --namespace apps
 ```
 
-2. **Run the install script**:
+1. **Run the install script**:
 
 ```bash
 ./scripts/install.sh
 ```
 
-3. **Verify all components are running**:
+1. **Verify all components are running**:
 
 ```bash
 kubectl get pods -n kong
@@ -60,13 +60,13 @@ kubectl get pods -n cert-manager
 kubectl get pods -n redis
 ```
 
-4. **Configure GitHub Actions secrets** in repository Settings → Secrets:
+1. **Configure GitHub Actions secrets** in repository Settings → Secrets:
    - `DEV_KUBECONFIG` — base64-encoded kubeconfig for dev cluster: `cat ~/.kube/config | base64 -w 0`
    - `PROD_KUBECONFIG` — base64-encoded kubeconfig for prod cluster
    - `KEYCLOAK_ADMIN_PASSWORD`
    - `REDIS_PASSWORD`
 
-5. **Configure GitHub Environments** in Settings → Environments:
+2. **Configure GitHub Environments** in Settings → Environments:
    - `dev` — no required reviewers
    - `prod` — add required reviewer(s); enable "Required reviewers"
 
@@ -110,6 +110,7 @@ kubectl rollout restart deployment/kong-kong -n kong
 
 1. Update the client secret in Keycloak Admin UI (Clients → kong → Credentials → Regenerate Secret)
 2. Update the Kubernetes secret:
+
 ```bash
 kubectl create secret generic kong-oidc-secret \
   --from-literal=client-secret='<new-secret>' \
@@ -215,11 +216,14 @@ kubectl exec -it $POD -n apps -c daprd -- /bin/sh
 ### Redis — restore from snapshot
 
 1. Scale down Dapr-annotated pods to stop writes:
+
 ```bash
 kubectl scale deployment/sample-app -n apps --replicas=0
 ```
-2. Restore the PVC from your cloud snapshot (cloud-specific procedure)
-3. Scale pods back up:
+
+1. Restore the PVC from your cloud snapshot (cloud-specific procedure)
+2. Scale pods back up:
+
 ```bash
 kubectl scale deployment/sample-app -n apps --replicas=2
 ```

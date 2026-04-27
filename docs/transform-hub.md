@@ -50,6 +50,7 @@ sequenceDiagram
 | `IPToGeoLocation` | `maltego.IPv4Address` | `maltego.Location`, `maltego.AS`, `maltego.Organization` | GeoIP + ASN lookup |
 
 Discover all transforms programmatically:
+
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
   https://api.example.com/transforms/api/v2/transforms
@@ -173,7 +174,7 @@ curl -s -X POST \
 | **Client Secret** | *(from registration step)* |
 | **Scope** | `transforms:execute` |
 
-3. Click **Fetch Transforms** — Maltego calls `GET /api/v2/manifest` and
+1. Click **Fetch Transforms** — Maltego calls `GET /api/v2/manifest` and
    imports all available transforms automatically.
 
 Maltego will cache the token and refresh it transparently before expiry (300 s).

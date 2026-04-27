@@ -108,9 +108,11 @@ kubectl create secret generic redis-secret \
 ## Step 4 — Update cloud-specific values
 
 Edit `k8s/cloud-overlays/gcp/keycloak-values.yaml`:
+
 - Set `externalDatabase.host` to the `cloud_sql_private_ip` Terraform output
 
 Edit `k8s/cloud-overlays/gcp/dapr-statestore.yaml`:
+
 - Set both `redisHost` values to `<memorystore_host>:6379`
 
 ## Step 5 — Install the platform

@@ -12,7 +12,7 @@ See [diagrams.md](./diagrams.md) for visual representations of the concepts desc
 
 ## The Core Principle
 
-```
+```text
 You write this ──────────────────────────────────────┐
                                                       │
   class DomainToIP(BaseTransform):                    │
@@ -109,6 +109,7 @@ git push
 ```
 
 The CI pipeline automatically:
+
 - Runs unit tests
 - Builds and scans the Docker image
 - Deploys via rolling update
@@ -117,6 +118,7 @@ The CI pipeline automatically:
 ### 4. Import in Maltego
 
 In Maltego Desktop:
+
 1. `Transform Hub → Add Server`
 2. Enter `https://api.example.com/transforms` and your bearer token
 3. All transforms appear — no manual registration

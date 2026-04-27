@@ -20,7 +20,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import ExpiredSignatureError, JWTError, jwk, jwt
 from jose.utils import base64url_decode
 
-from .config import Settings, get_settings
+from config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 

@@ -63,7 +63,7 @@ Three independent workflows, each triggered only by relevant file changes:
 
 ## Directory Structure
 
-```
+```text
 .
 ├── docs/
 │   ├── diagrams.md             # Mermaid diagrams (8 diagrams)
@@ -171,6 +171,7 @@ kubectl get svc -n kong kong-kong-proxy
 ```
 
 Update hostnames in:
+
 - `k8s/keycloak/helm-values.yaml` → `ingress.hostname`
 - `k8s/apps/sample-app/ingress.yaml` → `spec.rules[].host`
 - `k8s/cert-manager/cluster-issuer.yaml` → `spec.acme.email`
@@ -230,6 +231,7 @@ Three pipelines with independent triggers — infra changes never re-deploy apps
 ### Required GitHub Environments
 
 Settings → Environments:
+
 - `dev` — no required reviewers (auto-deploys on push to `master`)
 - `prod` — add 1+ required reviewer(s); applies to both infra and app pipelines
 
@@ -271,6 +273,27 @@ All docs live in [`docs/`](docs/) and are validated on every PR by the **`docs.y
 | Mermaid diagram syntax | `@mermaid-js/mermaid-cli` | ✅ Yes |
 | Spell check | `cspell` | ⚠️ Warn only |
 | Doc coverage (code changed without docs) | Custom script | ⚠️ Warn only |
+
+## Ingestion Pipeline
+
+Transform results are automatically persisted to **OpenSearch** and **Neo4j** via a dedicated
+ingestion worker that runs in a network-isolated zone. Business code never touches the datastores.
+
+```text
+apps ns (Transform Hub) → Dapr pub/sub → ingestion ns (Ingestion Worker) → opensearch ns (:9200)
+                                                                          → neo4j ns (:7687 Bolt)
+```
+
+- **Schema-driven**: `src/ingestion-worker/schema.py` maps each Maltego entity type to an
+  OpenSearch index + field types and a Neo4j node label + MERGE key. Adding a new entity type
+  is a one-line config change.
+- **Graph relationships**: the schema also maps `(transform_name, input_type, output_type)` to
+  Cypher relationship types — e.g. `DomainToIP` creates `(:Domain)-[:RESOLVES_TO]->(:IPAddress)`.
+- **Merge semantics**: deterministic doc IDs in OpenSearch; `MERGE` Cypher in Neo4j — no duplicates.
+- **Isolated by NetworkPolicy**: the `apps` namespace has no egress to OpenSearch or Neo4j.
+
+See [docs/ingestion.md](docs/ingestion.md) for the full architecture, schema reference, and
+operational guide.
 
 ## Onboarding
 

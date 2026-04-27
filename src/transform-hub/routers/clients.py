@@ -30,8 +30,8 @@ import httpx
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from ..auth import TokenClaims, verify_token
-from ..config import Settings, get_settings
+from auth import TokenClaims, verify_token
+from config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/clients", tags=["Client Registration"])
@@ -205,12 +205,12 @@ async def get_token(
     }
 
 
-@router.delete("/{client_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{client_id}", status_code=status.HTTP_200_OK)
 async def delete_client(
     client_id: str,
     claims: TokenClaims = Depends(verify_token),
     settings: Settings = Depends(get_settings),
-) -> None:
+) -> dict:
     """Revoke a registered client (admin only)."""
     scopes = claims.get("scope", "").split()
     if ADMIN_SCOPE not in scopes:
@@ -242,3 +242,4 @@ async def delete_client(
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
                             detail=str(exc)) from exc
+    return {"deleted": client_id}

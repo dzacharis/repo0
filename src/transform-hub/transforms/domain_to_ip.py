@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import dns.resolver
 
-from .. import transforms as registry
-from ..models.maltego import MaltegoEntity, TransformRequest, TransformResponse
+import transforms as registry
+from models.maltego import MaltegoEntity, TransformRequest, TransformResponse
 from .base import BaseTransform, TransformMeta
 
 

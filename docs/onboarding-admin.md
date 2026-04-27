@@ -70,7 +70,7 @@ kubectl get namespaces
 
 ## 2. Repository Layout
 
-```
+```text
 .
 ├── BILL-OF-MATERIALS.md       # Complete software inventory
 ├── ROADMAP.md                 # Planned extensions
@@ -238,6 +238,7 @@ curl -s -X POST "http://localhost:8080/admin/realms/maltego-hub/clients" \
 Admin Console → `maltego-hub` → Clients → select client → Actions → Delete.
 
 Or via API:
+
 ```bash
 CLIENT_UUID=$(curl -s "http://localhost:8080/admin/realms/maltego-hub/clients?clientId=developer-alice" \
   -H "Authorization: Bearer $ADMIN_TOKEN" | jq -r '.[0].id')
@@ -280,6 +281,7 @@ kubectl rollout status deployment/transform-hub -n apps
 ```
 
 For Helm:
+
 ```bash
 helm rollback kong 0 -n kong    # 0 = previous revision
 ```
@@ -340,7 +342,7 @@ Production deployments require a reviewer. Add approvers:
 
 ### OpenSearch Dashboards
 
-```
+```text
 URL: https://logs.example.com
 Auth: OIDC via Keycloak (myrealm)
 Indices:
@@ -359,6 +361,7 @@ curl -k -u admin:<password> https://localhost:9200/_plugins/_ism/policies
 ```
 
 Port-forward OpenSearch if not reachable:
+
 ```bash
 kubectl port-forward svc/opensearch-cluster-master -n opensearch 9200:9200
 ```

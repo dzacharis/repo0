@@ -204,9 +204,9 @@ az role assignment create \
   --scope $(terraform -chdir=terraform/azure output -raw acr_login_server | xargs -I{} az acr show --name {} --query id -o tsv)
 ```
 
-2. Add GitHub secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
+1. Add GitHub secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
 
-3. Update CI workflow:
+2. Update CI workflow:
 
 ```yaml
 - uses: azure/login@v2
