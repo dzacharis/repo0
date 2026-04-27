@@ -14,8 +14,8 @@ from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from jose import jwt
 
-from ..auth import _jwks_cache, _fetch_jwks, verify_token
-from ..config import Settings
+from auth import _jwks_cache, _fetch_jwks, verify_token
+from config import Settings
 
 
 # ── Fixtures ───────────────────────────────────────────────────────────────────
@@ -43,7 +43,7 @@ def _make_settings(**overrides) -> Settings:
 # ── JWKS fetch ─────────────────────────────────────────────────────────────────
 
 class TestFetchJWKS:
-    @patch("src.transform_hub.auth.httpx.get")
+    @patch("auth.httpx.get")
     def test_successful_fetch(self, mock_get):
         oidc_resp = MagicMock()
         oidc_resp.raise_for_status = MagicMock()
@@ -60,7 +60,7 @@ class TestFetchJWKS:
         assert "keys" in result
         assert result["keys"][0]["kid"] == "k1"
 
-    @patch("src.transform_hub.auth.httpx.get")
+    @patch("auth.httpx.get")
     def test_fetch_failure_raises(self, mock_get):
         import httpx
         mock_get.side_effect = httpx.HTTPError("connection refused")
@@ -76,11 +76,9 @@ class TestVerifyToken:
 
     def test_missing_token_raises_401(self):
         settings = _make_settings()
-        # Simulate what FastAPI does when bearer_scheme auto_error=True
         with pytest.raises(HTTPException) as exc_info:
-            # Pass a clearly invalid token
             creds = self._credentials("not.a.jwt.token")
-            with patch("src.transform_hub.auth._get_public_key",
+            with patch("auth._get_public_key",
                        side_effect=HTTPException(status_code=401, detail="Invalid")):
                 verify_token(creds, settings)
         assert exc_info.value.status_code == 401
@@ -88,14 +86,12 @@ class TestVerifyToken:
     def test_expired_token_raises_401(self):
         """Craft a token with exp in the past — jose raises ExpiredSignatureError."""
         settings = _make_settings()
-        # We can't sign a real RS256 token without a private key in unit tests,
-        # so we verify the error path by patching jwt.decode to raise.
         from jose import ExpiredSignatureError
         creds = self._credentials("header.payload.sig")
-        with patch("src.transform_hub.auth.jwt.get_unverified_header",
+        with patch("auth.jwt.get_unverified_header",
                    return_value={"kid": "k1", "alg": "RS256"}):
-            with patch("src.transform_hub.auth._get_public_key", return_value=MagicMock()):
-                with patch("src.transform_hub.auth.jwt.decode",
+            with patch("auth._get_public_key", return_value=MagicMock()):
+                with patch("auth.jwt.decode",
                            side_effect=ExpiredSignatureError("expired")):
                     with pytest.raises(HTTPException) as exc_info:
                         verify_token(creds, settings)
@@ -110,10 +106,10 @@ class TestVerifyToken:
             "scope": "openid",
             "exp": int(time.time()) + 3600,
         }
-        with patch("src.transform_hub.auth.jwt.get_unverified_header",
+        with patch("auth.jwt.get_unverified_header",
                    return_value={"kid": "k1", "alg": "RS256"}):
-            with patch("src.transform_hub.auth._get_public_key", return_value=MagicMock()):
-                with patch("src.transform_hub.auth.jwt.decode",
+            with patch("auth._get_public_key", return_value=MagicMock()):
+                with patch("auth.jwt.decode",
                            return_value=claims_without_scope):
                     with pytest.raises(HTTPException) as exc_info:
                         verify_token(creds, settings)
@@ -128,10 +124,10 @@ class TestVerifyToken:
             "scope": "transforms:execute openid",
             "exp": int(time.time()) + 3600,
         }
-        with patch("src.transform_hub.auth.jwt.get_unverified_header",
+        with patch("auth.jwt.get_unverified_header",
                    return_value={"kid": "k1", "alg": "RS256"}):
-            with patch("src.transform_hub.auth._get_public_key", return_value=MagicMock()):
-                with patch("src.transform_hub.auth.jwt.decode",
+            with patch("auth._get_public_key", return_value=MagicMock()):
+                with patch("auth.jwt.decode",
                            return_value=valid_claims):
                     result = verify_token(creds, settings)
         assert result["sub"] == "client-id"
@@ -146,9 +142,9 @@ class TestVerifyToken:
             "scope": "openid",
             "exp": int(time.time()) + 3600,
         }
-        with patch("src.transform_hub.auth.jwt.get_unverified_header",
+        with patch("auth.jwt.get_unverified_header",
                    return_value={"kid": "k1", "alg": "RS256"}):
-            with patch("src.transform_hub.auth._get_public_key", return_value=MagicMock()):
-                with patch("src.transform_hub.auth.jwt.decode", return_value=claims):
+            with patch("auth._get_public_key", return_value=MagicMock()):
+                with patch("auth.jwt.decode", return_value=claims):
                     result = verify_token(creds, settings)
         assert result["sub"] == "client"

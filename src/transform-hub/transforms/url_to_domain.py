@@ -10,8 +10,8 @@ from __future__ import annotations
 import socket
 from urllib.parse import urlparse
 
-from .. import transforms as registry
-from ..models.maltego import MaltegoEntity, TransformRequest, TransformResponse
+import transforms as registry
+from models.maltego import MaltegoEntity, TransformRequest, TransformResponse
 from .base import BaseTransform, TransformMeta
 
 

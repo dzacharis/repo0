@@ -15,7 +15,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
-from ..models.maltego import MaltegoEntity, TransformRequest, TransformResponse
+from models.maltego import MaltegoEntity, TransformRequest, TransformResponse
 
 
 @dataclass

@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from ..schema import EntityMapping, get_entity_mapping, opensearch_index_mapping
+from schema import EntityMapping, get_entity_mapping, opensearch_index_mapping
 
 logger = logging.getLogger(__name__)
 

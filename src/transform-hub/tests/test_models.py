@@ -8,7 +8,7 @@ import json
 import pytest
 from lxml import etree
 
-from ..models.maltego import (
+from models.maltego import (
     EntityField,
     MaltegoEntity,
     TransformLimits,

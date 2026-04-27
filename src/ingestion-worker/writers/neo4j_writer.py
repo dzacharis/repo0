@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 from neo4j import AsyncDriver, AsyncGraphDatabase, AsyncSession
 from neo4j.exceptions import Neo4jError
 
-from ..schema import (
+from schema import (
     EntityMapping,
     RelationshipMapping,
     get_entity_mapping,
@@ -209,7 +209,7 @@ class Neo4jWriter:
         Create uniqueness constraints for each entity label.
         Safe to call at startup — constraints are idempotent in Neo4j 5.x.
         """
-        from ..schema import ENTITY_SCHEMA
+        from schema import ENTITY_SCHEMA
 
         async with self._driver.session() as session:
             for entity_type, mapping in ENTITY_SCHEMA.items():

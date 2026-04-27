@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from ..models.maltego import EntityField, MaltegoEntity, TransformLimits, TransformRequest
+from models.maltego import EntityField, MaltegoEntity, TransformLimits, TransformRequest
 
 
 # ── Entity / request factories ─────────────────────────────────────────────────
@@ -87,10 +87,10 @@ def mock_token_claims():
 @pytest.fixture
 def mock_valid_token(mock_token_claims):
     """Patch verify_token to return a valid TokenClaims without hitting Keycloak."""
-    from ..auth import TokenClaims
+    from auth import TokenClaims
 
     claims = TokenClaims(**mock_token_claims)
-    with patch("src.transform_hub.routers.transforms.verify_token", return_value=claims):
+    with patch("routers.transforms.verify_token", return_value=claims):
         yield claims
 
 
@@ -102,8 +102,8 @@ def app_client():
     Synchronous TestClient with auth bypassed.
     Uses dependency_overrides so the whole router is exercised.
     """
-    from ..auth import TokenClaims, verify_token
-    from ..main import app
+    from auth import TokenClaims, verify_token
+    from main import app
 
     claims = TokenClaims(**MOCK_TOKEN_CLAIMS)
     app.dependency_overrides[verify_token] = lambda: claims

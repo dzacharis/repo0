@@ -20,9 +20,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from ..auth import TokenClaims, verify_token
-from ..config import Settings, get_settings
-from ..transforms import all_transforms
+from auth import TokenClaims, verify_token
+from config import Settings, get_settings
+from transforms import all_transforms
 
 router = APIRouter(tags=["Discovery"])
 

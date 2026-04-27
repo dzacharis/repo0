@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import httpx
 
-from .. import transforms as registry
-from ..models.maltego import MaltegoEntity, TransformRequest, TransformResponse
+import transforms as registry
+from models.maltego import MaltegoEntity, TransformRequest, TransformResponse
 from .base import BaseTransform, TransformMeta
 
 _RDAP_URL = "https://rdap.org/domain/{domain}"

@@ -42,9 +42,9 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from .config import settings
-from .writers.neo4j_writer import Neo4jWriter
-from .writers.opensearch_writer import OpenSearchWriter
+from config import settings
+from writers.neo4j_writer import Neo4jWriter
+from writers.opensearch_writer import OpenSearchWriter
 
 logging.basicConfig(
     level=logging.INFO,

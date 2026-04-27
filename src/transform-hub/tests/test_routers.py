@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from .conftest import MOCK_TOKEN_CLAIMS, SIMPLE_XML
+from conftest import MOCK_TOKEN_CLAIMS
 
 
 # ── Manifest router ────────────────────────────────────────────────────────────
@@ -34,8 +34,7 @@ class TestManifestRouter:
 
     def test_manifest_requires_auth(self):
         """Manifest endpoint must reject unauthenticated requests."""
-        from ..main import app
-        # Temporarily clear overrides
+        from main import app
         original = app.dependency_overrides.copy()
         app.dependency_overrides.clear()
 
@@ -72,8 +71,8 @@ SIMPLE_JSON_BODY = {
 
 
 class TestTransformRouter:
-    @patch("src.transform_hub.transforms.domain_to_ip.dns.resolver.resolve")
-    @patch("src.transform_hub.routers.transforms._publish_entity_event", new_callable=AsyncMock)
+    @patch("transforms.domain_to_ip.dns.resolver.resolve")
+    @patch("routers.transforms._publish_entity_event", new_callable=AsyncMock)
     def test_execute_xml_returns_200(self, _mock_pub, mock_dns, app_client):
         mock_dns.return_value = [MagicMock(__str__=lambda self: "1.2.3.4")]
         resp = app_client.post(
@@ -84,8 +83,8 @@ class TestTransformRouter:
         assert resp.status_code == 200
         assert b"MaltegoTransformResponseMessage" in resp.content
 
-    @patch("src.transform_hub.transforms.domain_to_ip.dns.resolver.resolve")
-    @patch("src.transform_hub.routers.transforms._publish_entity_event", new_callable=AsyncMock)
+    @patch("transforms.domain_to_ip.dns.resolver.resolve")
+    @patch("routers.transforms._publish_entity_event", new_callable=AsyncMock)
     def test_execute_json_returns_200(self, _mock_pub, mock_dns, app_client):
         mock_dns.return_value = [MagicMock(__str__=lambda self: "1.2.3.4")]
         resp = app_client.post(
@@ -121,8 +120,8 @@ class TestTransformRouter:
         names = [t["name"] for t in data["transforms"]]
         assert "DomainToIP" in names
 
-    @patch("src.transform_hub.transforms.domain_to_ip.dns.resolver.resolve")
-    @patch("src.transform_hub.routers.transforms._publish_entity_event", new_callable=AsyncMock)
+    @patch("transforms.domain_to_ip.dns.resolver.resolve")
+    @patch("routers.transforms._publish_entity_event", new_callable=AsyncMock)
     def test_response_content_type_xml(self, _mock_pub, mock_dns, app_client):
         mock_dns.return_value = [MagicMock(__str__=lambda self: "1.2.3.4")]
         resp = app_client.post(
@@ -132,8 +131,8 @@ class TestTransformRouter:
         )
         assert "xml" in resp.headers.get("content-type", "")
 
-    @patch("src.transform_hub.transforms.domain_to_ip.dns.resolver.resolve")
-    @patch("src.transform_hub.routers.transforms._publish_entity_event", new_callable=AsyncMock)
+    @patch("transforms.domain_to_ip.dns.resolver.resolve")
+    @patch("routers.transforms._publish_entity_event", new_callable=AsyncMock)
     def test_response_content_type_json(self, _mock_pub, mock_dns, app_client):
         mock_dns.return_value = [MagicMock(__str__=lambda self: "1.2.3.4")]
         resp = app_client.post(

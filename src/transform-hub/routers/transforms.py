@@ -30,9 +30,9 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
-from ..auth import TokenClaims, verify_token
-from ..models.maltego import TransformRequest, TransformResponse
-from ..transforms import all_transforms, get_transform
+from auth import TokenClaims, verify_token
+from models.maltego import TransformRequest, TransformResponse
+from transforms import all_transforms, get_transform
 
 logger = logging.getLogger(__name__)
 

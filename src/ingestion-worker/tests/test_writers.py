@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
-from ..writers.opensearch_writer import OpenSearchWriter, _entity_doc_id
-from ..writers.neo4j_writer import Neo4jWriter
+from writers.opensearch_writer import OpenSearchWriter, _entity_doc_id
+from writers.neo4j_writer import Neo4jWriter
 
 
 # ── OpenSearch writer ──────────────────────────────────────────────────────────
@@ -155,7 +155,7 @@ class TestOpenSearchWriter:
 
 class TestNeo4jWriter:
     def _make_writer(self):
-        with patch("src.ingestion_worker.writers.neo4j_writer.AsyncGraphDatabase.driver") as mock_driver:
+        with patch("writers.neo4j_writer.AsyncGraphDatabase.driver") as mock_driver:
             writer = Neo4jWriter(
                 uri="bolt://localhost:7687",
                 username="neo4j",
@@ -183,8 +183,7 @@ class TestNeo4jWriter:
             output_entities=[{"type": "maltego.IPv4Address", "value": "1.2.3.4", "fields": {}}],
             client_id="test",
         )
-        # Verify that session.run was called (for MERGE node + relationship)
-        assert mock_tx.run.call_count >= 2  # input node + output node (+ optionally relationship)
+        assert mock_tx.run.call_count >= 2
 
     @pytest.mark.asyncio
     async def test_ingest_event_merges_relationship(self):
@@ -205,7 +204,6 @@ class TestNeo4jWriter:
             output_entities=[{"type": "maltego.IPv4Address", "value": "1.2.3.4", "fields": {}}],
             client_id="test",
         )
-        # 3 calls: input MERGE + output MERGE + relationship MERGE
         assert mock_tx.run.call_count == 3
 
     @pytest.mark.asyncio
@@ -227,7 +225,6 @@ class TestNeo4jWriter:
             output_entities=[{"type": "maltego.IPv4Address", "value": "1.2.3.4", "fields": {}}],
             client_id="test",
         )
-        # Only 2 MERGE calls — no relationship for unknown transform
         assert mock_tx.run.call_count == 2
 
     @pytest.mark.asyncio
@@ -240,7 +237,7 @@ class TestNeo4jWriter:
 
         await writer.ensure_constraints()
 
-        from ..schema import ENTITY_SCHEMA
+        from schema import ENTITY_SCHEMA
         expected_labels = {m.neo4j_label for m in ENTITY_SCHEMA.values() if m.neo4j_label}
         assert mock_session.run.call_count >= len(expected_labels)
 
@@ -264,4 +261,4 @@ class TestNeo4jWriter:
 
         await writer.upsert_node(mock_session, "maltego.UnknownType", "some-value")
         cypher = mock_session.run.call_args[0][0]
-        assert "Entity" in cypher  # Generic fallback label
+        assert "Entity" in cypher

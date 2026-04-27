@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from .conftest import make_cloudevent, make_entity_event
+from conftest import make_cloudevent, make_entity_event
 
 
 # ── App client fixture ─────────────────────────────────────────────────────────
@@ -19,13 +19,14 @@ from .conftest import make_cloudevent, make_entity_event
 @pytest.fixture
 def client(mock_os_writer, mock_neo4j_writer):
     """TestClient with both writers injected as mocks."""
-    import src.ingestion_worker.main as app_module
-
-    app_module._os_writer = mock_os_writer
-    app_module._neo4j_writer = mock_neo4j_writer
-    app_module._semaphore = __import__("asyncio").Semaphore(10)
+    import asyncio
+    import main as app_module
 
     with TestClient(app_module.app) as c:
+        # Inject mocks after lifespan has run (lifespan may create real writers)
+        app_module._os_writer = mock_os_writer
+        app_module._neo4j_writer = mock_neo4j_writer
+        app_module._semaphore = asyncio.Semaphore(10)
         yield c
 
     app_module._os_writer = None
@@ -155,7 +156,7 @@ class TestHealthEndpoints:
 
     def test_readiness_when_no_writers(self, mock_os_writer, mock_neo4j_writer):
         """Readiness endpoint works even if writers are not initialised."""
-        import src.ingestion_worker.main as app_module
+        import main as app_module
         import asyncio
 
         app_module._os_writer = None

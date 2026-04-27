@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from ..schema import (
+from schema import (
     ENTITY_SCHEMA,
     RELATIONSHIP_SCHEMA,
     get_entity_mapping,
