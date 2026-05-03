@@ -135,7 +135,7 @@ jobs:
 
   # ── 5. Container Image Scanning ───────────────────────────────────────────────
   # Runs on schedule or when a new image is referenced in manifests.
-  # On PR/push, scans the previously built image (if it exists).
+  # Skips gracefully if the image has not been pushed yet.
   image-scan:
     name: Image Vulnerability Scan (Trivy)
     runs-on: ubuntu-latest
@@ -143,7 +143,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check image exists in registry
+        id: check
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}/sample-app:latest
+        run: |
+          if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Image $IMAGE not found — skipping scan."
+          fi
+
       - name: Scan sample-app image
+        if: steps.check.outputs.exists == 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ghcr.io/${{ github.repository }}/sample-app:latest
@@ -154,7 +167,7 @@ jobs:
 
       - name: Upload image scan SARIF
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: steps.check.outputs.exists == 'true'
         with:
           sarif_file: trivy-image.sarif
           category: trivy-container
